@@ -29,3 +29,7 @@ Codex for Android is a mobile chat app focused on model interaction, not local d
 If you want to talk to a Codex model on Android, keep chat history, send images, render rich responses, and use a custom compatible endpoint, this app is built for that.
 
 If you want an agent that edits files, reads directories, or runs terminal commands, that is outside the scope of this app.
+
+## License
+
+This project is released under [The Unlicense](LICENSE).
