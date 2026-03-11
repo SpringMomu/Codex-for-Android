@@ -1,0 +1,82 @@
+<resources>
+    <string name="app_name">Codex</string>
+    <string name="back">返回</string>
+    <string name="show">显示</string>
+    <string name="hide">隐藏</string>
+    <string name="save">保存</string>
+    <string name="edit">修改</string>
+    <string name="delete">删除</string>
+    <string name="cancel">取消</string>
+
+    <string name="settings_title">设置</string>
+    <string name="settings_saved_at">已保存于 %1$s</string>
+    <string name="settings_base_url">接口地址</string>
+    <string name="settings_api_key">API Key</string>
+    <string name="settings_model_alias">模型代号</string>
+    <string name="settings_language">界面语言</string>
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_simplified_chinese">简体中文</string>
+    <string name="settings_system_prompt">系统提示词</string>
+    <string name="settings_save">保存配置</string>
+    <string name="settings_saving">保存中...</string>
+    <string name="settings_reasoning_effort">思考强度</string>
+    <string name="reasoning_low">低</string>
+    <string name="reasoning_medium">中</string>
+    <string name="reasoning_high">高</string>
+    <string name="reasoning_xhigh">极高</string>
+
+    <string name="history_title">历史记录</string>
+    <string name="history_empty_title">还没有历史会话</string>
+    <string name="history_empty_hint">开始一次新对话后，记录会自动显示在这里。</string>
+    <string name="history_delete_title">删除历史记录</string>
+    <string name="history_updated_at">更新时间 %1$s</string>
+
+    <string name="add_image">添加图片</string>
+    <string name="send">发送</string>
+    <string name="model_not_configured">未设置模型</string>
+    <string name="open_history">历史记录</string>
+    <string name="open_settings">设置</string>
+    <string name="start_new_conversation">新建会话</string>
+    <string name="empty_chat_title">今天可以帮到你什么</string>
+    <string name="remove_image">移除图片</string>
+    <string name="retry">重试</string>
+    <string name="reasoning_summary">思考摘要</string>
+    <string name="collapse_reasoning_summary">收起思考摘要</string>
+    <string name="expand_reasoning_summary">展开思考摘要</string>
+    <string name="close_preview">关闭预览</string>
+    <string name="delete_message_title">删除消息</string>
+    <string name="open_gallery">打开相册</string>
+    <string name="open_camera">打开摄像机</string>
+    <string name="copy_code">复制</string>
+    <string name="copied_code">已复制</string>
+    <string name="activity_search">搜索</string>
+    <string name="message_action_title_assistant">编辑助手消息</string>
+    <string name="message_action_title_user">编辑消息</string>
+    <string name="message_action_hint">长按后的编辑或删除会直接改变这段对话的上下文。</string>
+    <string name="message_edit_title_assistant">修改助手消息</string>
+    <string name="message_edit_title_user">修改消息</string>
+
+    <string name="new_conversation">开始新会话</string>
+    <string name="conversation_title_new">新会话</string>
+    <string name="conversation_title_image_only">图片消息</string>
+    <string name="conversation_preview_with_images">%1$s  %2$s</string>
+
+    <string name="error_no_visible_reply">模型没有返回可显示的文本内容。</string>
+    <string name="error_fill_base_url">请先填写接口地址。</string>
+    <string name="error_fill_api_key">请先填写 API Key。</string>
+    <string name="error_fill_model_alias">请先填写模型代号。</string>
+    <string name="error_request_failed_http">请求失败，HTTP %1$d</string>
+    <string name="error_empty_response_body">响应体为空。</string>
+    <string name="error_model_invocation_failed">模型调用失败。</string>
+    <string name="error_request_failed_unknown">请求失败，且未返回明确错误信息。</string>
+
+    <plurals name="history_saved_conversations">
+        <item quantity="one">本地已保存 %d 条会话记录，长按可删除</item>
+        <item quantity="other">本地已保存 %d 条会话记录，长按可删除</item>
+    </plurals>
+    <plurals name="conversation_preview_images">
+        <item quantity="one">[图片 %d 张]</item>
+        <item quantity="other">[图片 %d 张]</item>
+    </plurals>
+</resources>

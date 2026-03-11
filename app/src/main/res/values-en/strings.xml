@@ -1,0 +1,82 @@
+<resources>
+    <string name="app_name">Codex</string>
+    <string name="back">Back</string>
+    <string name="show">Show</string>
+    <string name="hide">Hide</string>
+    <string name="save">Save</string>
+    <string name="edit">Edit</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_saved_at">Saved at %1$s</string>
+    <string name="settings_base_url">Base URL</string>
+    <string name="settings_api_key">API Key</string>
+    <string name="settings_model_alias">Model alias</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_system">Follow system</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_simplified_chinese">Simplified Chinese</string>
+    <string name="settings_system_prompt">System prompt</string>
+    <string name="settings_save">Save settings</string>
+    <string name="settings_saving">Saving...</string>
+    <string name="settings_reasoning_effort">Reasoning effort</string>
+    <string name="reasoning_low">Low</string>
+    <string name="reasoning_medium">Medium</string>
+    <string name="reasoning_high">High</string>
+    <string name="reasoning_xhigh">Very high</string>
+
+    <string name="history_title">History</string>
+    <string name="history_empty_title">No history yet</string>
+    <string name="history_empty_hint">Start a new conversation and it will appear here automatically.</string>
+    <string name="history_delete_title">Delete history</string>
+    <string name="history_updated_at">Updated %1$s</string>
+
+    <string name="add_image">Add image</string>
+    <string name="send">Send</string>
+    <string name="model_not_configured">No model configured</string>
+    <string name="open_history">History</string>
+    <string name="open_settings">Settings</string>
+    <string name="start_new_conversation">New chat</string>
+    <string name="empty_chat_title">How can I help today</string>
+    <string name="remove_image">Remove image</string>
+    <string name="retry">Retry</string>
+    <string name="reasoning_summary">Reasoning summary</string>
+    <string name="collapse_reasoning_summary">Collapse reasoning summary</string>
+    <string name="expand_reasoning_summary">Expand reasoning summary</string>
+    <string name="close_preview">Close preview</string>
+    <string name="delete_message_title">Delete message</string>
+    <string name="open_gallery">Open gallery</string>
+    <string name="open_camera">Open camera</string>
+    <string name="copy_code">Copy</string>
+    <string name="copied_code">Copied</string>
+    <string name="activity_search">Search</string>
+    <string name="message_action_title_assistant">Edit assistant message</string>
+    <string name="message_action_title_user">Edit message</string>
+    <string name="message_action_hint">Editing or deleting after a long press changes this conversation\'s context directly.</string>
+    <string name="message_edit_title_assistant">Edit assistant message</string>
+    <string name="message_edit_title_user">Edit message</string>
+
+    <string name="new_conversation">Start new chat</string>
+    <string name="conversation_title_new">New chat</string>
+    <string name="conversation_title_image_only">Image message</string>
+    <string name="conversation_preview_with_images">%1$s  %2$s</string>
+
+    <string name="error_no_visible_reply">The model returned no visible text.</string>
+    <string name="error_fill_base_url">Please fill in the base URL first.</string>
+    <string name="error_fill_api_key">Please fill in the API key first.</string>
+    <string name="error_fill_model_alias">Please fill in the model alias first.</string>
+    <string name="error_request_failed_http">Request failed, HTTP %1$d</string>
+    <string name="error_empty_response_body">The response body is empty.</string>
+    <string name="error_model_invocation_failed">Model invocation failed.</string>
+    <string name="error_request_failed_unknown">The request failed without a clear error message.</string>
+
+    <plurals name="history_saved_conversations">
+        <item quantity="one">Saved %d conversation locally. Long press to delete.</item>
+        <item quantity="other">Saved %d conversations locally. Long press to delete.</item>
+    </plurals>
+    <plurals name="conversation_preview_images">
+        <item quantity="one">[%d image]</item>
+        <item quantity="other">[%d images]</item>
+    </plurals>
+</resources>
