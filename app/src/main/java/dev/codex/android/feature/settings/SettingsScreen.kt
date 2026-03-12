@@ -49,8 +49,6 @@ import dev.codex.android.core.i18n.AppLanguage
 import dev.codex.android.core.di.AppContainer
 import dev.codex.android.data.model.AppSettings
 import dev.codex.android.ui.format.formatTimestamp
-import dev.codex.android.ui.theme.Panel
-import dev.codex.android.ui.theme.Slate
 import kotlin.math.roundToInt
 
 @Composable
@@ -113,7 +111,7 @@ private fun SettingsScreen(
             uiState.lastSavedAt?.let { lastSavedAt ->
                 Text(
                     text = stringResource(R.string.settings_saved_at, formatTimestamp(lastSavedAt)),
-                    color = Slate,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -154,7 +152,7 @@ private fun SettingsScreen(
                 onSelectedIndexChange = { reasoningEffort = it },
             )
             Card(
-                colors = CardDefaults.cardColors(containerColor = Panel),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(24.dp),
             ) {
                 Column(
@@ -203,7 +201,7 @@ private fun LanguageField(
     onLanguageTagChange: (String) -> Unit,
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Panel),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
     ) {
         Column(
@@ -240,7 +238,7 @@ private fun ReasoningEffortField(
     onSelectedIndexChange: (Int) -> Unit,
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Panel),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
     ) {
         Column(
@@ -250,7 +248,7 @@ private fun ReasoningEffortField(
             Text(stringResource(R.string.settings_reasoning_effort), style = MaterialTheme.typography.titleMedium)
             Text(
                 text = reasoningEffortLabel(reasoningEffortValue(selectedIndex)),
-                color = Slate,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Slider(
@@ -267,7 +265,7 @@ private fun ReasoningEffortField(
                 listOf("low", "medium", "high", "xhigh").forEach { value ->
                     Text(
                         text = reasoningEffortLabel(value),
-                        color = Slate,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -321,7 +319,7 @@ private fun SettingField(
     trailingAction: @Composable (() -> Unit)? = null,
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Panel),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
     ) {
         Column(

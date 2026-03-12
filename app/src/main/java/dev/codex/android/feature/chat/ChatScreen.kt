@@ -118,14 +118,7 @@ import dev.codex.android.data.model.MessageRole
 import dev.codex.android.ui.format.formatTimestamp
 import dev.codex.android.ui.markdown.MarkdownText
 import dev.codex.android.ui.markdown.containsLikelyLatex
-import dev.codex.android.ui.theme.Canvas
-import dev.codex.android.ui.theme.ErrorSoft
-import dev.codex.android.ui.theme.Fog
-import dev.codex.android.ui.theme.Ink
 import dev.codex.android.ui.theme.Mist
-import dev.codex.android.ui.theme.Panel
-import dev.codex.android.ui.theme.PanelStrong
-import dev.codex.android.ui.theme.Slate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -246,8 +239,8 @@ private fun ChatScreen(
                 }
                 Surface(
                     shape = RoundedCornerShape(22.dp),
-                    color = Panel,
-                    border = BorderStroke(1.dp, Fog.copy(alpha = 0.92f)),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)),
                 ) {
                     Row(
                         modifier = Modifier
@@ -258,7 +251,7 @@ private fun ChatScreen(
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = Canvas,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
                         ) {
                             IconButton(
                                 onClick = { showImageSourceDialog = true },
@@ -268,7 +261,7 @@ private fun ChatScreen(
                                 Icon(
                                     imageVector = Icons.Rounded.Image,
                                     contentDescription = stringResource(R.string.add_image),
-                                    tint = Ink,
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(15.dp),
                                 )
                             }
@@ -289,12 +282,16 @@ private fun ChatScreen(
                                 ),
                                 minLines = 1,
                                 maxLines = 4,
-                                cursorBrush = androidx.compose.ui.graphics.SolidColor(Ink),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                             )
                         }
                         Surface(
                             shape = CircleShape,
-                            color = if (uiState.isSending) Fog else MaterialTheme.colorScheme.primary,
+                            color = if (uiState.isSending) {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
                         ) {
                             IconButton(
                                 onClick = if (uiState.isSending) onStopStreaming else onSend,
@@ -306,7 +303,11 @@ private fun ChatScreen(
                                     contentDescription = stringResource(
                                         if (uiState.isSending) R.string.stop_generation else R.string.send,
                                     ),
-                                    tint = if (uiState.isSending) Slate else MaterialTheme.colorScheme.onPrimary,
+                                    tint = if (uiState.isSending) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    },
                                     modifier = Modifier.size(15.dp),
                                 )
                             }
@@ -539,7 +540,7 @@ private fun ChatHeader(
             )
             Text(
                 text = modelName,
-                color = Slate,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -574,7 +575,7 @@ private fun HeaderActionButton(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = Ink,
+            tint = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.size(20.dp),
         )
     }
@@ -614,8 +615,12 @@ private fun QuickScrollButton(
 ) {
     Surface(
         shape = CircleShape,
-        color = if (enabled) Panel else Fog.copy(alpha = 0.7f),
-        border = BorderStroke(1.dp, Fog.copy(alpha = 0.92f)),
+        color = if (enabled) {
+            MaterialTheme.colorScheme.surface
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+        },
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)),
         shadowElevation = 2.dp,
     ) {
         IconButton(
@@ -626,7 +631,11 @@ private fun QuickScrollButton(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (enabled) Ink else Slate,
+                tint = if (enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 modifier = Modifier.size(18.dp),
             )
         }
@@ -684,7 +693,7 @@ private fun EmptyChatState(
                 modifier = Modifier
                     .size(width = 10.dp, height = 24.dp)
                     .graphicsLayer { alpha = cursorAlpha }
-                    .background(Ink, RoundedCornerShape(2.dp)),
+                    .background(MaterialTheme.colorScheme.onBackground, RoundedCornerShape(2.dp)),
             )
         }
     }
@@ -712,7 +721,7 @@ private fun SelectedImagesRow(
                         .size(20.dp)
                         .clickable { onRemove(path) },
                     shape = CircleShape,
-                    color = Ink.copy(alpha = 0.72f),
+                    color = Color.Black.copy(alpha = 0.72f),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -741,17 +750,17 @@ private fun MessageBubble(
     val background = when {
         message.isError -> MaterialTheme.colorScheme.errorContainer
         message.role == MessageRole.USER -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-        isAssistant -> Panel
-        else -> PanelStrong
+        isAssistant -> MaterialTheme.colorScheme.surface
+        else -> MaterialTheme.colorScheme.surfaceVariant
     }
     val contentColor = when {
-        message.isError -> ErrorSoft
+        message.isError -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurface
     }
     val borderColor = when {
-        message.isError -> ErrorSoft.copy(alpha = 0.18f)
+        message.isError -> MaterialTheme.colorScheme.error.copy(alpha = 0.24f)
         message.role == MessageRole.USER -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-        else -> Fog.copy(alpha = 0.92f)
+        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)
     }
 
     Column(
@@ -825,7 +834,7 @@ private fun MessageBubble(
                             color = if (message.isError) {
                                 MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
                             } else {
-                                Mist.copy(alpha = 0.72f)
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
                             },
                         ) {
                             TextButton(
@@ -958,8 +967,8 @@ private fun ActivityTimeline(
         activityLog.forEachIndexed { index, activity ->
             Surface(
                 shape = RoundedCornerShape(14.dp),
-                color = Canvas.copy(alpha = 0.58f),
-                border = BorderStroke(1.dp, Fog.copy(alpha = 0.9f)),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.9f)),
             ) {
                 Row(
                     modifier = Modifier
@@ -974,7 +983,7 @@ private fun ActivityTimeline(
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = Mist,
+                            color = MaterialTheme.colorScheme.surface,
                         ) {
                             Box(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -982,14 +991,14 @@ private fun ActivityTimeline(
                             ) {
                                 Text(
                                     text = "${index + 1}",
-                                    color = Slate.copy(alpha = 0.76f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f),
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             }
                         }
                         Text(
                             text = activityLabel(activity.label),
-                            color = Slate,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Medium,
@@ -1003,7 +1012,7 @@ private fun ActivityTimeline(
                             modifier = Modifier
                                 .size(7.dp)
                                 .background(
-                                    color = Fog,
+                                    color = MaterialTheme.colorScheme.outline,
                                     shape = CircleShape,
                                 ),
                         )
@@ -1036,7 +1045,7 @@ private fun InlineActivityDots() {
                     .size(5.dp)
                     .graphicsLayer { this.alpha = alpha }
                     .background(
-                        color = Slate,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         shape = CircleShape,
                     ),
             )
@@ -1056,8 +1065,8 @@ private fun ReasoningSummarySection(
 
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = Canvas.copy(alpha = 0.66f),
-        border = BorderStroke(1.dp, Fog.copy(alpha = 0.88f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.66f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.88f)),
     ) {
         Column(
             modifier = Modifier
@@ -1078,14 +1087,14 @@ private fun ReasoningSummarySection(
                 Text(
                     text = stringResource(R.string.reasoning_summary),
                     style = MaterialTheme.typography.labelLarge,
-                    color = Slate,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Icon(
                     imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                     contentDescription = stringResource(
                         if (expanded) R.string.collapse_reasoning_summary else R.string.expand_reasoning_summary,
                     ),
-                    tint = Slate,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             AnimatedVisibility(
@@ -1156,8 +1165,8 @@ private fun AttachmentThumbnail(
             else -> modifier
         },
         shape = RoundedCornerShape(18.dp),
-        color = Panel,
-        border = BorderStroke(1.dp, Fog),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
         if (bitmap != null) {
             Image(
@@ -1170,13 +1179,13 @@ private fun AttachmentThumbnail(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Panel),
+                    .background(MaterialTheme.colorScheme.surface),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Image,
                     contentDescription = null,
-                    tint = Slate,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -1217,7 +1226,7 @@ private fun ImagePreviewDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Ink.copy(alpha = 0.94f), RoundedCornerShape(20.dp))
+                .background(Color.Black.copy(alpha = 0.94f), RoundedCornerShape(20.dp))
                 .padding(12.dp)
                 .onSizeChanged { containerSize = it }
                 .pointerInput(path) {
@@ -1354,7 +1363,7 @@ private fun nextMessageOffset(
 @Composable
 private fun TypingIndicatorBubble() {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Panel),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(22.dp),
     ) {
         Row(
@@ -1390,7 +1399,7 @@ private fun TypingIndicatorBubble() {
                             translationY = translateY
                         }
                         .background(
-                            color = Slate,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             shape = CircleShape,
                         ),
                 )
@@ -1427,7 +1436,7 @@ private fun MessageActionDialog(
                 )
                 Text(
                     text = stringResource(R.string.message_action_hint),
-                    color = Slate,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 TextButton(

@@ -57,9 +57,6 @@ import dev.codex.android.R
 import dev.codex.android.core.di.AppContainer
 import dev.codex.android.data.model.ConversationSummary
 import dev.codex.android.ui.format.formatTimestamp
-import dev.codex.android.ui.theme.Fog
-import dev.codex.android.ui.theme.Panel
-import dev.codex.android.ui.theme.Slate
 
 @Composable
 fun HistoryRoute(
@@ -142,7 +139,7 @@ private fun HistoryScreen(
                 } else {
                     pluralStringResource(R.plurals.history_saved_conversations, uiState.sessionCount, uiState.sessionCount)
                 },
-                color = Slate,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
             OutlinedTextField(
@@ -164,15 +161,15 @@ private fun HistoryScreen(
                     Text(stringResource(R.string.history_search_placeholder))
                 },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Fog,
-                    unfocusedBorderColor = Fog,
-                    focusedContainerColor = Panel,
-                    unfocusedContainerColor = Panel,
-                    disabledContainerColor = Panel,
-                    focusedLeadingIconColor = Slate,
-                    unfocusedLeadingIconColor = Slate,
-                    focusedPlaceholderColor = Slate,
-                    unfocusedPlaceholderColor = Slate,
+                    focusedBorderColor = MaterialTheme.colorScheme.outline,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     cursorColor = MaterialTheme.colorScheme.primary,
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -188,7 +185,7 @@ private fun HistoryScreen(
                 if (uiState.sessions.isEmpty()) {
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Panel),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             shape = RoundedCornerShape(24.dp),
                         ) {
                             Text(
@@ -252,7 +249,7 @@ private fun HistoryItem(
                 onClick = { onConversationSelected(session.id) },
                 onLongClick = onDeleteConversation,
             ),
-        colors = CardDefaults.cardColors(containerColor = Panel),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
     ) {
         Row(
@@ -274,7 +271,7 @@ private fun HistoryItem(
                 )
                 Text(
                     text = session.preview,
-                    color = Slate,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -282,7 +279,7 @@ private fun HistoryItem(
                 Text(
                     text = stringResource(R.string.history_updated_at, formatTimestamp(session.updatedAt)),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Slate,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Icon(

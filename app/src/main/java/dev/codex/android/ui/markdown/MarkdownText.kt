@@ -49,11 +49,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.codex.android.R
-import dev.codex.android.ui.theme.Canvas
-import dev.codex.android.ui.theme.Fog
-import dev.codex.android.ui.theme.Ink
-import dev.codex.android.ui.theme.PanelStrong
-import dev.codex.android.ui.theme.Slate
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.latex.JLatexMathPlugin
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
@@ -61,6 +56,7 @@ import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.syntax.Prism4jSyntaxHighlight
+import io.noties.markwon.syntax.Prism4jThemeDarkula
 import io.noties.markwon.syntax.Prism4jThemeDefault
 import io.noties.prism4j.Prism4j
 import kotlinx.coroutines.delay
@@ -99,6 +95,7 @@ fun MarkdownText(
 ) {
     val context = LocalContext.current
     val textColor = contentColor.toArgb()
+    val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
     val markdownSegments = remember(markdown) { splitMarkdownSegments(markdown) }
     val markwon = remember(context, textColor) {
         Markwon.builder(context)
@@ -115,9 +112,13 @@ fun MarkdownText(
             )
             .build()
     }
-    val codeSyntaxHighlighter = remember(context) {
+    val codeSyntaxHighlighter = remember(context, isDarkTheme) {
         val prism4j = Prism4j(CodexGrammarLocator())
-        val theme = Prism4jThemeDefault.create(Color.Transparent.toArgb())
+        val theme = if (isDarkTheme) {
+            Prism4jThemeDarkula.create()
+        } else {
+            Prism4jThemeDefault.create(Color.Transparent.toArgb())
+        }
         Prism4jSyntaxHighlight.create(prism4j, theme, "clike")
     }
 
@@ -213,11 +214,22 @@ private fun CodeBlockCard(
 ) {
     val clipboard = LocalClipboardManager.current
     var copied by remember(code) { mutableStateOf(false) }
+    val outlineColor = MaterialTheme.colorScheme.outline
+    val headerColor = MaterialTheme.colorScheme.surfaceVariant
+    val codeBodyColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val contentColor = MaterialTheme.colorScheme.onSurface
     val highlightedCode = remember(code, language) {
         runCatching { syntaxHighlighter.highlight(language, code) }.getOrElse { code }
     }
     val horizontalScrollState = rememberScrollState()
     val verticalScrollState = rememberScrollState()
+    val copyCode = remember(clipboard, code) {
+        {
+            clipboard.setText(AnnotatedString(code))
+            copied = true
+        }
+    }
 
     LaunchedEffect(copied) {
         if (copied) {
@@ -227,37 +239,34 @@ private fun CodeBlockCard(
     }
 
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .noHapticPressGesture(onLongPress = onLongPress),
-        color = Canvas,
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, Fog),
+        border = BorderStroke(1.dp, outlineColor),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(PanelStrong)
+                    .background(headerColor)
                     .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = languageLabel(language),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Slate,
-                    fontFamily = FontFamily.Monospace,
-                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .noHapticPressGesture(onLongPress = onLongPress),
+                ) {
+                    Text(
+                        text = languageLabel(language),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = secondaryTextColor,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
                 TextButton(
-                    modifier = Modifier.noHapticPressGesture(
-                        onClick = {
-                            clipboard.setText(AnnotatedString(code))
-                            copied = true
-                        },
-                        onLongPress = {},
-                    ),
-                    onClick = {},
+                    onClick = copyCode,
                 ) {
                     Icon(
                         imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
@@ -265,10 +274,12 @@ private fun CodeBlockCard(
                             if (copied) R.string.copied_code else R.string.copy_code,
                         ),
                         modifier = Modifier.size(16.dp),
+                        tint = contentColor,
                     )
                     Text(
                         text = stringResource(if (copied) R.string.copied_code else R.string.copy_code),
                         modifier = Modifier.padding(start = 6.dp),
+                        color = contentColor,
                     )
                 }
             }
@@ -276,7 +287,8 @@ private fun CodeBlockCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.White.copy(alpha = 0.42f))
+                    .noHapticPressGesture(onLongPress = onLongPress)
+                    .background(codeBodyColor)
                     .padding(horizontal = 14.dp, vertical = 12.dp),
             ) {
                 Box(
@@ -305,7 +317,7 @@ private fun CodeBlockTextView(
     onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val textColor = Ink.toArgb()
+    val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     AndroidView(
         modifier = modifier,
