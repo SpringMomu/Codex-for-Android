@@ -117,6 +117,7 @@ import dev.codex.android.data.model.ChatMessage
 import dev.codex.android.data.model.MessageRole
 import dev.codex.android.ui.format.formatTimestamp
 import dev.codex.android.ui.markdown.MarkdownText
+import dev.codex.android.ui.markdown.containsLikelyLatex
 import dev.codex.android.ui.theme.Canvas
 import dev.codex.android.ui.theme.ErrorSoft
 import dev.codex.android.ui.theme.Fog
@@ -907,8 +908,29 @@ private fun shouldRenderWithMarkdown(
         "\\(",
         "\\[",
     )
-    return markdownPatterns.any(content::contains)
+    return markdownPatterns.any(content::contains) ||
+        containsLikelyLatex(content) ||
+        containsAsciiTable(content)
 }
+
+private fun containsAsciiTable(content: String): Boolean {
+    val lines = content.lines()
+    if (lines.size < 3) return false
+
+    for (index in 0..lines.lastIndex - 2) {
+        if (isAsciiTableBorder(lines[index]) &&
+            lines[index + 1].trim().startsWith("|") &&
+            isAsciiTableBorder(lines[index + 2])
+        ) {
+            return true
+        }
+    }
+
+    return false
+}
+
+private fun isAsciiTableBorder(line: String): Boolean =
+    Regex("""^\+(?:-+\+){2,}$""").matches(line.trim())
 
 @Composable
 private fun StreamingMessageText(

@@ -67,6 +67,11 @@ import kotlinx.coroutines.delay
 
 private val blockLatexRegex = Regex("""\\\[\s*([\s\S]*?)\s*\\\]""")
 private val inlineLatexRegex = Regex("""\\\((.+?)\\\)""")
+private val singleDollarLatexRegex = Regex("""(?<!\\)(?<!\$)\$(?!\$)([^\n$]+?)(?<!\\)\$(?!\$)""")
+private val doubleDollarLatexRegex = Regex("""(?<!\\)\$\$([\s\S]+?)(?<!\\)\$\$""")
+private val asciiTableBorderRegex = Regex("""^\+(?:-+\+){2,}$""")
+private val latexCommandRegex = Regex("""\\[A-Za-z]+""")
+private val latexMathOperatorRegex = Regex("""[=^_{}]|\s[+\-*/]\s|\d+\s*[+\-*/=]\s*[A-Za-z(\\]""")
 
 private sealed interface MarkdownSegment {
     data class Text(val markdown: String) : MarkdownSegment
@@ -471,20 +476,30 @@ private fun appendTextSegment(
     segments: MutableList<MarkdownSegment>,
     text: String,
 ) {
-    val normalized = normalizeLatexSyntax(text)
+    val normalized = normalizeMarkdownSyntax(text)
     if (normalized.isNotBlank()) {
         segments += MarkdownSegment.Text(normalized)
     }
 }
 
-private fun normalizeLatexSyntax(markdown: String): String {
-    val normalizedBlocks = blockLatexRegex.replace(markdown) { match ->
+private fun normalizeMarkdownSyntax(markdown: String): String {
+    val normalizedTables = normalizeAsciiTables(markdown)
+    val normalizedBlocks = blockLatexRegex.replace(normalizedTables) { match ->
         val content = match.groupValues[1].trim('\n')
         "\n${'$'}${'$'}\n$content\n${'$'}${'$'}\n"
     }
 
-    return inlineLatexRegex.replace(normalizedBlocks) { match ->
+    val normalizedInlineBlocks = inlineLatexRegex.replace(normalizedBlocks) { match ->
         "${'$'}${'$'}${match.groupValues[1]}${'$'}${'$'}"
+    }
+
+    return singleDollarLatexRegex.replace(normalizedInlineBlocks) { match ->
+        val content = match.groupValues[1].trim()
+        if (!looksLikeLatexContent(content)) {
+            match.value
+        } else {
+            "${'$'}${'$'}$content${'$'}${'$'}"
+        }
     }
 }
 
@@ -494,3 +509,118 @@ private fun languageLabel(language: String?): String =
         ?.takeIf { it.isNotEmpty() }
         ?.uppercase()
         ?: "CODE"
+
+private fun normalizeAsciiTables(markdown: String): String {
+    val lines = markdown.split('\n')
+    if (lines.size < 3) return markdown
+
+    val normalized = mutableListOf<String>()
+    var index = 0
+
+    while (index < lines.size) {
+        val table = parseAsciiTable(lines, index)
+        if (table != null) {
+            normalized += table.toMarkdownLines()
+            index += table.consumedLineCount
+            continue
+        }
+
+        normalized += lines[index]
+        index += 1
+    }
+
+    return normalized.joinToString("\n")
+}
+
+private data class AsciiTable(
+    val rows: List<List<String>>,
+    val consumedLineCount: Int,
+)
+
+private fun parseAsciiTable(
+    lines: List<String>,
+    startIndex: Int,
+): AsciiTable? {
+    if (!lines[startIndex].trim().matches(asciiTableBorderRegex)) return null
+
+    val rows = mutableListOf<List<String>>()
+    val columnCount = lines[startIndex].count { it == '+' } - 1
+    if (columnCount < 2) return null
+
+    var index = startIndex
+    while (index + 2 < lines.size) {
+        val borderLine = lines[index].trim()
+        val rowLine = lines[index + 1]
+        val nextBorderLine = lines[index + 2].trim()
+
+        if (!borderLine.matches(asciiTableBorderRegex) || !nextBorderLine.matches(asciiTableBorderRegex)) {
+            break
+        }
+
+        val row = parseAsciiTableRow(rowLine, columnCount) ?: break
+        rows += row
+        index += 2
+    }
+
+    if (rows.size < 2) return null
+    if (!lines.getOrNull(index)?.trim().orEmpty().matches(asciiTableBorderRegex)) return null
+
+    return AsciiTable(
+        rows = rows,
+        consumedLineCount = index - startIndex + 1,
+    )
+}
+
+private fun parseAsciiTableRow(
+    line: String,
+    expectedColumns: Int,
+): List<String>? {
+    val trimmed = line.trim()
+    if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) return null
+
+    val columns = trimmed
+        .removePrefix("|")
+        .removeSuffix("|")
+        .split('|')
+        .map { it.trim().replace("|", "\\|") }
+
+    return columns.takeIf { it.size == expectedColumns }
+}
+
+private fun AsciiTable.toMarkdownLines(): List<String> {
+    val header = rows.first()
+    val body = rows.drop(1)
+    val separator = List(header.size) { "---" }
+
+    return buildList {
+        add(markdownTableRow(header))
+        add(markdownTableRow(separator))
+        body.forEach { add(markdownTableRow(it)) }
+    }
+}
+
+private fun markdownTableRow(columns: List<String>): String =
+    columns.joinToString(prefix = "| ", separator = " | ", postfix = " |")
+
+private fun looksLikeLatexContent(content: String): Boolean {
+    if (content.isBlank()) return false
+    if (latexCommandRegex.containsMatchIn(content)) return true
+    if (latexMathOperatorRegex.containsMatchIn(content)) return true
+
+    val compact = content.filterNot(Char::isWhitespace)
+    return compact.length <= 3 && compact.all { it.isLetter() }
+}
+
+internal fun containsLikelyLatex(markdown: String): Boolean {
+    if (inlineLatexRegex.containsMatchIn(markdown) || blockLatexRegex.containsMatchIn(markdown)) {
+        return true
+    }
+
+    if (doubleDollarLatexRegex.containsMatchIn(markdown)) {
+        return true
+    }
+
+    return singleDollarLatexRegex.findAll(markdown).any { match ->
+        looksLikeLatexContent(match.groupValues[1].trim())
+    }
+}
