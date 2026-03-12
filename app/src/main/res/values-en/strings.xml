@@ -31,9 +31,14 @@
     <string name="history_empty_hint">Start a new conversation and it will appear here automatically.</string>
     <string name="history_delete_title">Delete history</string>
     <string name="history_updated_at">Updated %1$s</string>
+    <string name="history_search_placeholder">Search chat history</string>
+    <string name="history_search_empty_hint">No matching conversations found.</string>
+    <string name="history_search_result_count">%1$d matching conversations</string>
 
     <string name="add_image">Add image</string>
     <string name="send">Send</string>
+    <string name="stop_generation">Stop generating</string>
+    <string name="chat_input_placeholder">Send a message</string>
     <string name="model_not_configured">No model configured</string>
     <string name="open_history">History</string>
     <string name="open_settings">Settings</string>

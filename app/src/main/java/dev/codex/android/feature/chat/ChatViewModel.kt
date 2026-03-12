@@ -110,6 +110,10 @@ class ChatViewModel(
         }
     }
 
+    fun stopStreaming() {
+        container.chatStreamCoordinator.stopActiveStream()
+    }
+
     fun importSelectedImages(uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch {

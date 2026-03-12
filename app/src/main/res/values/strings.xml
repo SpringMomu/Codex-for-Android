@@ -31,9 +31,14 @@
     <string name="history_empty_hint">开始一次新对话后，记录会自动显示在这里。</string>
     <string name="history_delete_title">删除历史记录</string>
     <string name="history_updated_at">更新时间 %1$s</string>
+    <string name="history_search_placeholder">搜索聊天记录内容</string>
+    <string name="history_search_empty_hint">没有找到匹配的聊天记录。</string>
+    <string name="history_search_result_count">找到 %1$d 条匹配记录</string>
 
     <string name="add_image">添加图片</string>
     <string name="send">发送</string>
+    <string name="stop_generation">停止输出</string>
+    <string name="chat_input_placeholder">发送消息</string>
     <string name="model_not_configured">未设置模型</string>
     <string name="open_history">历史记录</string>
     <string name="open_settings">设置</string>

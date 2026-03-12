@@ -7,7 +7,9 @@ import dev.codex.android.data.model.MessageRole
 import dev.codex.android.data.remote.OpenAiCompatService
 import dev.codex.android.data.repository.ConversationRepository
 import dev.codex.android.data.repository.SettingsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.Call
 
 data class ActiveChatStream(
     val conversationId: Long,
@@ -35,6 +38,12 @@ class ChatStreamCoordinator(
 ) {
     private val requestMutex = Mutex()
     private val activeStream = MutableStateFlow<ActiveChatStream?>(null)
+    @Volatile
+    private var activeStreamJob: Job? = null
+    @Volatile
+    private var activeStreamCall: Call? = null
+    @Volatile
+    private var stoppedAssistantMessageId: Long? = null
 
     val activeStreamState: StateFlow<ActiveChatStream?> = activeStream.asStateFlow()
 
@@ -119,22 +128,29 @@ class ChatStreamCoordinator(
         true
     }
 
+    fun stopActiveStream() {
+        stopActiveStreamInternal()
+    }
+
     private fun startStream(
         conversationId: Long,
         assistantMessageId: Long,
         history: List<ChatMessage>,
     ) {
+        stoppedAssistantMessageId = null
         activeStream.value = ActiveChatStream(
             conversationId = conversationId,
             assistantMessageId = assistantMessageId,
         )
-        applicationScope.launch {
+        activeStreamJob = applicationScope.launch {
             try {
                 streamAssistantReply(
                     history = history,
                     assistantMessageId = assistantMessageId,
                 )
             } finally {
+                activeStreamCall = null
+                activeStreamJob = null
                 activeStream.update { current ->
                     if (current?.assistantMessageId == assistantMessageId) {
                         null
@@ -175,44 +191,46 @@ class ChatStreamCoordinator(
         val result = openAiCompatService.streamAssistantReply(
             settings = settings,
             history = history,
-        ) { event ->
-            when (event) {
-                is OpenAiCompatService.StreamEvent.TextDelta -> {
-                    streamedText += event.delta
-                    pushStreamingState()
-                }
-
-                is OpenAiCompatService.StreamEvent.ReasoningSummaryDelta -> {
-                    streamedReasoningSummary += event.delta
-                    pushStreamingState()
-                }
-
-                is OpenAiCompatService.StreamEvent.WebSearchStateChanged -> {
-                    streamedWebSearchState = event.state
-                    activityLog = when (event.state) {
-                        OpenAiCompatService.WebSearchState.SEARCHING -> {
-                            activityLog + ChatActivity(
-                                label = "search",
-                                status = ACTIVITY_RUNNING,
-                            )
-                        }
-
-                        OpenAiCompatService.WebSearchState.COMPLETED -> {
-                            markLatestStepCompleted(activityLog, "search")
-                        }
-
-                        else -> activityLog
+            onEvent = { event ->
+                when (event) {
+                    is OpenAiCompatService.StreamEvent.TextDelta -> {
+                        streamedText += event.delta
+                        pushStreamingState()
                     }
-                    pushStreamingState(force = true)
-                }
 
-                is OpenAiCompatService.StreamEvent.Completed -> {
-                    streamedText = event.reply.text
-                    streamedReasoningSummary = event.reply.reasoningSummary
-                    pushStreamingState(force = true)
+                    is OpenAiCompatService.StreamEvent.ReasoningSummaryDelta -> {
+                        streamedReasoningSummary += event.delta
+                        pushStreamingState()
+                    }
+
+                    is OpenAiCompatService.StreamEvent.WebSearchStateChanged -> {
+                        streamedWebSearchState = event.state
+                        activityLog = when (event.state) {
+                            OpenAiCompatService.WebSearchState.SEARCHING -> {
+                                activityLog + ChatActivity(
+                                    label = "search",
+                                    status = ACTIVITY_RUNNING,
+                                )
+                            }
+
+                            OpenAiCompatService.WebSearchState.COMPLETED -> {
+                                markLatestStepCompleted(activityLog, "search")
+                            }
+
+                            else -> activityLog
+                        }
+                        pushStreamingState(force = true)
+                    }
+
+                    is OpenAiCompatService.StreamEvent.Completed -> {
+                        streamedText = event.reply.text
+                        streamedReasoningSummary = event.reply.reasoningSummary
+                        pushStreamingState(force = true)
+                    }
                 }
-            }
-        }
+            },
+            onCallCreated = { call -> activeStreamCall = call },
+        )
 
         result.fold(
             onSuccess = {
@@ -227,6 +245,31 @@ class ChatStreamCoordinator(
                 }
             },
             onFailure = { throwable ->
+                if (shouldTreatAsStopped(assistantMessageId, throwable)) {
+                    conversationRepository.updateStreamingMessage(
+                        messageId = assistantMessageId,
+                        content = streamedText,
+                        reasoningSummary = streamedReasoningSummary,
+                        activityLog = activityLog,
+                        webSearchState = streamedWebSearchState,
+                        isError = false,
+                    )
+                    return@fold
+                }
+                if (shouldAttemptRecovery(assistantMessageId, throwable)) {
+                    val recovered = recoverAbortedStream(
+                        settings = settings,
+                        history = history,
+                        assistantMessageId = assistantMessageId,
+                        streamedText = streamedText,
+                        streamedReasoningSummary = streamedReasoningSummary,
+                        activityLog = activityLog,
+                        streamedWebSearchState = streamedWebSearchState,
+                    )
+                    if (recovered) {
+                        return@fold
+                    }
+                }
                 val errorText = throwable.message
                     ?.takeIf { it.isNotBlank() }
                     ?: throwable::class.java.simpleName
@@ -241,6 +284,94 @@ class ChatStreamCoordinator(
                 )
             },
         )
+    }
+
+    private fun shouldTreatAsStopped(
+        assistantMessageId: Long,
+        throwable: Throwable,
+    ): Boolean {
+        val stoppedThisMessage = stoppedAssistantMessageId == assistantMessageId
+        val canceled = throwable is CancellationException ||
+            throwable.message?.contains("Canceled", ignoreCase = true) == true ||
+            throwable.message?.contains("Socket closed", ignoreCase = true) == true ||
+            throwable.message?.contains("Software caused connection abort", ignoreCase = true) == true
+        return stoppedThisMessage && canceled
+    }
+
+    private fun shouldAttemptRecovery(
+        assistantMessageId: Long,
+        throwable: Throwable,
+    ): Boolean {
+        if (stoppedAssistantMessageId == assistantMessageId) return false
+        val message = throwable.message.orEmpty()
+        return message.contains("Software caused connection abort", ignoreCase = true) ||
+            message.contains("Connection reset", ignoreCase = true) ||
+            message.contains("Broken pipe", ignoreCase = true)
+    }
+
+    private suspend fun recoverAbortedStream(
+        settings: dev.codex.android.data.model.AppSettings,
+        history: List<ChatMessage>,
+        assistantMessageId: Long,
+        streamedText: String,
+        streamedReasoningSummary: String,
+        activityLog: List<ChatActivity>,
+        streamedWebSearchState: String,
+    ): Boolean {
+        val resumeHistory = history + ChatMessage(
+            id = assistantMessageId,
+            role = MessageRole.ASSISTANT,
+            content = streamedText,
+            reasoningSummary = streamedReasoningSummary,
+            activityLog = activityLog,
+            webSearchState = streamedWebSearchState,
+            createdAt = System.currentTimeMillis(),
+        )
+
+        val recovery = openAiCompatService.createAssistantReply(
+            settings = settings,
+            history = resumeHistory,
+        )
+
+        return recovery.fold(
+            onSuccess = { reply ->
+                conversationRepository.updateStreamingMessage(
+                    messageId = assistantMessageId,
+                    content = mergeRecoveredText(streamedText, reply.text),
+                    reasoningSummary = mergeRecoveredText(streamedReasoningSummary, reply.reasoningSummary),
+                    activityLog = activityLog,
+                    webSearchState = streamedWebSearchState,
+                    isError = false,
+                )
+                true
+            },
+            onFailure = {
+                false
+            },
+        )
+    }
+
+    private fun mergeRecoveredText(
+        existing: String,
+        incoming: String,
+    ): String {
+        if (existing.isBlank()) return incoming
+        if (incoming.isBlank()) return existing
+        if (incoming.startsWith(existing)) return incoming
+        if (existing.startsWith(incoming)) return existing
+
+        val maxOverlap = minOf(existing.length, incoming.length)
+        val overlap = (maxOverlap downTo 1).firstOrNull { size ->
+            existing.takeLast(size) == incoming.take(size)
+        } ?: 0
+        return existing + incoming.drop(overlap)
+    }
+
+    private fun stopActiveStreamInternal() {
+        val current = activeStream.value ?: return
+        stoppedAssistantMessageId = current.assistantMessageId
+        activeStreamCall?.cancel()
+        activeStreamJob?.cancel()
     }
 }
 

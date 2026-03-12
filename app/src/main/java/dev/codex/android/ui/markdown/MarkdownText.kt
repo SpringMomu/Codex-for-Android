@@ -6,7 +6,9 @@ import android.util.TypedValue
 import android.view.ViewGroup
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,9 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -34,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.composed
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -42,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.codex.android.R
@@ -86,6 +90,7 @@ fun MarkdownText(
     markdown: String,
     contentColor: Color,
     modifier: Modifier = Modifier,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val textColor = contentColor.toArgb()
@@ -123,6 +128,7 @@ fun MarkdownText(
                             markdown = segment.markdown,
                             contentColor = contentColor,
                             markwon = markwon,
+                            onLongPress = onLongPress,
                         )
                     }
                 }
@@ -132,6 +138,7 @@ fun MarkdownText(
                         language = segment.language,
                         code = segment.code,
                         syntaxHighlighter = codeSyntaxHighlighter,
+                        onLongPress = onLongPress,
                     )
                 }
             }
@@ -145,6 +152,7 @@ private fun MarkdownTextView(
     contentColor: Color,
     markwon: Markwon,
     modifier: Modifier = Modifier,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val textColor = contentColor.toArgb()
@@ -159,24 +167,44 @@ private fun MarkdownTextView(
                 )
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                 setLineSpacing(0f, 1.2f)
+                includeFontPadding = false
                 setTextColor(textColor)
                 linksClickable = true
                 movementMethod = LinkMovementMethod.getInstance()
                 setTextIsSelectable(false)
+                isHapticFeedbackEnabled = false
+                isLongClickable = onLongPress != null
+                setOnLongClickListener {
+                    onLongPress?.invoke()
+                    onLongPress != null
+                }
+                markwon.setMarkdown(this, markdown)
+                tag = markdown
             }
         },
         update = { textView ->
             textView.setTextColor(textColor)
-            markwon.setMarkdown(textView, markdown)
+            textView.isHapticFeedbackEnabled = false
+            textView.isLongClickable = onLongPress != null
+            textView.setOnLongClickListener {
+                onLongPress?.invoke()
+                onLongPress != null
+            }
+            if (textView.tag != markdown) {
+                markwon.setMarkdown(textView, markdown)
+                textView.tag = markdown
+            }
         },
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CodeBlockCard(
     language: String?,
     code: String,
     syntaxHighlighter: Prism4jSyntaxHighlight,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val clipboard = LocalClipboardManager.current
     var copied by remember(code) { mutableStateOf(false) }
@@ -194,7 +222,9 @@ private fun CodeBlockCard(
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .noHapticPressGesture(onLongPress = onLongPress),
         color = Canvas,
         shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.dp, Fog),
@@ -215,10 +245,14 @@ private fun CodeBlockCard(
                     fontFamily = FontFamily.Monospace,
                 )
                 TextButton(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(code))
-                        copied = true
-                    },
+                    modifier = Modifier.noHapticPressGesture(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(code))
+                            copied = true
+                        },
+                        onLongPress = {},
+                    ),
+                    onClick = {},
                 ) {
                     Icon(
                         imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
@@ -242,12 +276,15 @@ private fun CodeBlockCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 340.dp)
-                        .verticalScroll(verticalScrollState),
+                    .fillMaxWidth()
+                    .heightIn(max = 340.dp)
+                    .verticalScroll(verticalScrollState),
                 ) {
                     Row(modifier = Modifier.horizontalScroll(horizontalScrollState)) {
-                        CodeBlockTextView(highlightedCode = highlightedCode)
+                        CodeBlockTextView(
+                            highlightedCode = highlightedCode,
+                            onLongPress = onLongPress,
+                        )
                     }
                 }
             }
@@ -255,10 +292,12 @@ private fun CodeBlockCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CodeBlockTextView(
     highlightedCode: CharSequence,
     modifier: Modifier = Modifier,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val textColor = Ink.toArgb()
@@ -278,10 +317,22 @@ private fun CodeBlockTextView(
                 setTextColor(textColor)
                 setTextIsSelectable(false)
                 setHorizontallyScrolling(true)
+                isHapticFeedbackEnabled = false
+                isLongClickable = onLongPress != null
+                setOnLongClickListener {
+                    onLongPress?.invoke()
+                    onLongPress != null
+                }
             }
         },
         update = { textView ->
             textView.setTextColor(textColor)
+            textView.isHapticFeedbackEnabled = false
+            textView.isLongClickable = onLongPress != null
+            textView.setOnLongClickListener {
+                onLongPress?.invoke()
+                onLongPress != null
+            }
             if (textView.text != highlightedCode) {
                 textView.text = highlightedCode
             }
@@ -342,6 +393,18 @@ private fun splitMarkdownSegments(markdown: String): List<MarkdownSegment> {
     }
 
     return segments
+}
+
+private fun Modifier.noHapticPressGesture(
+    onClick: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
+): Modifier = composed {
+    pointerInput(onClick, onLongPress) {
+        detectTapGestures(
+            onTap = { onClick?.invoke() },
+            onLongPress = { onLongPress?.invoke() },
+        )
+    }
 }
 
 private fun parseOpeningFence(line: String): FenceDefinition? {

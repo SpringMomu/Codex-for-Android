@@ -10,9 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,19 +29,26 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +57,7 @@ import dev.codex.android.R
 import dev.codex.android.core.di.AppContainer
 import dev.codex.android.data.model.ConversationSummary
 import dev.codex.android.ui.format.formatTimestamp
+import dev.codex.android.ui.theme.Fog
 import dev.codex.android.ui.theme.Panel
 import dev.codex.android.ui.theme.Slate
 
@@ -68,6 +77,7 @@ fun HistoryRoute(
         onConversationSelected = onConversationSelected,
         onNewConversation = onNewConversation,
         onDeleteConversation = viewModel::deleteConversation,
+        onSearchQueryChange = viewModel::updateSearchQuery,
     )
 }
 
@@ -79,8 +89,21 @@ private fun HistoryScreen(
     onConversationSelected: (Long) -> Unit,
     onNewConversation: () -> Unit,
     onDeleteConversation: (Long) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
 ) {
     var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
+    var searchFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(uiState.searchQuery))
+    }
+
+    LaunchedEffect(uiState.searchQuery) {
+        if (searchFieldValue.text != uiState.searchQuery) {
+            searchFieldValue = TextFieldValue(
+                text = uiState.searchQuery,
+                selection = TextRange(uiState.searchQuery.length),
+            )
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -112,13 +135,48 @@ private fun HistoryScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = if (uiState.sessionCount == 0) {
+                text = if (uiState.searchQuery.isNotBlank()) {
+                    stringResource(R.string.history_search_result_count, uiState.sessionCount)
+                } else if (uiState.sessionCount == 0) {
                     stringResource(R.string.history_empty_title)
                 } else {
                     pluralStringResource(R.plurals.history_saved_conversations, uiState.sessionCount, uiState.sessionCount)
                 },
                 color = Slate,
                 style = MaterialTheme.typography.bodyMedium,
+            )
+            OutlinedTextField(
+                value = searchFieldValue,
+                onValueChange = {
+                    searchFieldValue = it
+                    onSearchQueryChange(it.text)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(20.dp),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = null,
+                    )
+                },
+                placeholder = {
+                    Text(stringResource(R.string.history_search_placeholder))
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Fog,
+                    unfocusedBorderColor = Fog,
+                    focusedContainerColor = Panel,
+                    unfocusedContainerColor = Panel,
+                    disabledContainerColor = Panel,
+                    focusedLeadingIconColor = Slate,
+                    unfocusedLeadingIconColor = Slate,
+                    focusedPlaceholderColor = Slate,
+                    unfocusedPlaceholderColor = Slate,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                ),
             )
             LazyColumn(
                 modifier = Modifier
@@ -134,7 +192,11 @@ private fun HistoryScreen(
                             shape = RoundedCornerShape(24.dp),
                         ) {
                             Text(
-                                text = stringResource(R.string.history_empty_hint),
+                                text = if (uiState.searchQuery.isBlank()) {
+                                    stringResource(R.string.history_empty_hint)
+                                } else {
+                                    stringResource(R.string.history_search_empty_hint)
+                                },
                                 modifier = Modifier.padding(20.dp),
                                 color = MaterialTheme.colorScheme.onSurface,
                             )

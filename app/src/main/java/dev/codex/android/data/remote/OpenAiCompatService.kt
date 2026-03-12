@@ -11,6 +11,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -70,6 +71,7 @@ class OpenAiCompatService(
         settings: AppSettings,
         history: List<ChatMessage>,
         onEvent: suspend (StreamEvent) -> Unit,
+        onCallCreated: ((Call) -> Unit)? = null,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             require(settings.baseUrl.isNotBlank()) { appStrings.errorFillBaseUrl(settings.languageTag) }
@@ -84,6 +86,7 @@ class OpenAiCompatService(
                         history = history,
                         onEvent = onEvent,
                         webSearchToolType = toolType,
+                        onCallCreated = onCallCreated,
                     )
                     lastError = null
                     break
@@ -106,6 +109,7 @@ class OpenAiCompatService(
         history: List<ChatMessage>,
         onEvent: suspend (StreamEvent) -> Unit,
         webSearchToolType: String,
+        onCallCreated: ((Call) -> Unit)? = null,
     ) {
         val requestBody = ResponsesRequest(
             model = settings.modelAlias,
@@ -126,7 +130,9 @@ class OpenAiCompatService(
             .post(json.encodeToString(ResponsesRequest.serializer(), requestBody).toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        okHttpClient.newCall(request).execute().use { response ->
+        val call = okHttpClient.newCall(request)
+        onCallCreated?.invoke(call)
+        call.execute().use { response ->
             if (!response.isSuccessful) {
                 val responseBody = response.body?.string().orEmpty()
                 error(responseBody.ifBlank { appStrings.errorRequestFailedHttp(settings.languageTag, response.code) })

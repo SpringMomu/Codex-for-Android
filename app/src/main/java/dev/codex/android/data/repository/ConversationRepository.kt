@@ -22,7 +22,26 @@ class ConversationRepository(
 ) {
     private val json = Json
 
-    fun observeConversations(): Flow<List<ConversationSummary>> = chatDao.observeConversations().map { items ->
+    fun observeConversations(query: String = ""): Flow<List<ConversationSummary>> {
+        val source = if (query.isBlank()) {
+            chatDao.observeConversations()
+        } else {
+            chatDao.observeConversationsByQuery(query.trim())
+        }
+        return source.map { items ->
+            items.map { entity ->
+                ConversationSummary(
+                    id = entity.id,
+                    title = entity.title,
+                    preview = entity.lastPreview,
+                    createdAt = entity.createdAt,
+                    updatedAt = entity.updatedAt,
+                )
+            }
+        }
+    }
+
+    fun observeAllConversations(): Flow<List<ConversationSummary>> = chatDao.observeConversations().map { items ->
         items.map { entity ->
             ConversationSummary(
                 id = entity.id,

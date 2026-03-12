@@ -12,6 +12,24 @@ interface ChatDao {
     @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
     fun observeConversations(): Flow<List<ConversationEntity>>
 
+    @Query(
+        """
+        SELECT * FROM conversations
+        WHERE title LIKE '%' || :query || '%'
+            OR lastPreview LIKE '%' || :query || '%'
+            OR EXISTS (
+                SELECT 1 FROM messages
+                WHERE messages.conversationId = conversations.id
+                    AND (
+                        messages.content LIKE '%' || :query || '%'
+                        OR messages.reasoningSummary LIKE '%' || :query || '%'
+                    )
+            )
+        ORDER BY updatedAt DESC
+        """,
+    )
+    fun observeConversationsByQuery(query: String): Flow<List<ConversationEntity>>
+
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC, id ASC")
     fun observeMessages(conversationId: Long): Flow<List<MessageEntity>>
 
