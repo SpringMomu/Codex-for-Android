@@ -61,6 +61,10 @@
     <string name="message_action_hint">长按后的编辑或删除会直接改变这段对话的上下文。</string>
     <string name="message_edit_title_assistant">修改助手消息</string>
     <string name="message_edit_title_user">修改消息</string>
+    <string name="message_edit_find_result_count">%1$d/%2$d</string>
+    <string name="message_edit_find_result_empty">0/0</string>
+    <string name="message_edit_find_previous">上一条匹配</string>
+    <string name="message_edit_find_next">下一条匹配</string>
 
     <string name="new_conversation">开始新会话</string>
     <string name="conversation_title_new">新会话</string>
@@ -75,6 +79,9 @@
     <string name="error_empty_response_body">响应体为空。</string>
     <string name="error_model_invocation_failed">模型调用失败。</string>
     <string name="error_request_failed_unknown">请求失败，且未返回明确错误信息。</string>
+    <string name="streaming_notification_channel_name">后台传输</string>
+    <string name="streaming_notification_title">Codex 正在生成回复</string>
+    <string name="streaming_notification_text">保持应用在后台持续传输中</string>
 
     <plurals name="history_saved_conversations">
         <item quantity="one">本地已保存 %d 条会话记录，长按可删除</item>

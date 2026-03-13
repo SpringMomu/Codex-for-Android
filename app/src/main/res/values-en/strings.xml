@@ -61,6 +61,10 @@
     <string name="message_action_hint">Editing or deleting after a long press changes this conversation\'s context directly.</string>
     <string name="message_edit_title_assistant">Edit assistant message</string>
     <string name="message_edit_title_user">Edit message</string>
+    <string name="message_edit_find_result_count">%1$d/%2$d</string>
+    <string name="message_edit_find_result_empty">0/0</string>
+    <string name="message_edit_find_previous">Previous match</string>
+    <string name="message_edit_find_next">Next match</string>
 
     <string name="new_conversation">Start new chat</string>
     <string name="conversation_title_new">New chat</string>
@@ -75,6 +79,9 @@
     <string name="error_empty_response_body">The response body is empty.</string>
     <string name="error_model_invocation_failed">Model invocation failed.</string>
     <string name="error_request_failed_unknown">The request failed without a clear error message.</string>
+    <string name="streaming_notification_channel_name">Background streaming</string>
+    <string name="streaming_notification_title">Codex is generating a reply</string>
+    <string name="streaming_notification_text">Keeping the stream running in the background</string>
 
     <plurals name="history_saved_conversations">
         <item quantity="one">Saved %d conversation locally. Long press to delete.</item>

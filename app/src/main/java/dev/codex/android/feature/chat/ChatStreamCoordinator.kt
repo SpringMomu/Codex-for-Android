@@ -1,5 +1,7 @@
 package dev.codex.android.feature.chat
 
+import android.content.Context
+import dev.codex.android.app.StreamingForegroundService
 import dev.codex.android.core.i18n.AppStrings
 import dev.codex.android.data.model.ChatActivity
 import dev.codex.android.data.model.ChatMessage
@@ -30,6 +32,7 @@ data class SendMessageResult(
 )
 
 class ChatStreamCoordinator(
+    private val appContext: Context,
     private val applicationScope: CoroutineScope,
     private val conversationRepository: ConversationRepository,
     private val settingsRepository: SettingsRepository,
@@ -142,6 +145,9 @@ class ChatStreamCoordinator(
             conversationId = conversationId,
             assistantMessageId = assistantMessageId,
         )
+        runCatching {
+            StreamingForegroundService.start(appContext)
+        }
         activeStreamJob = applicationScope.launch {
             try {
                 streamAssistantReply(
@@ -149,6 +155,9 @@ class ChatStreamCoordinator(
                     assistantMessageId = assistantMessageId,
                 )
             } finally {
+                runCatching {
+                    StreamingForegroundService.stop(appContext)
+                }
                 activeStreamCall = null
                 activeStreamJob = null
                 activeStream.update { current ->

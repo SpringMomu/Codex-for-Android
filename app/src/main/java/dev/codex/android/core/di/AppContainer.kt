@@ -50,6 +50,7 @@ class AppContainer(context: Context) {
         appStrings = appStrings,
     )
     val chatStreamCoordinator = ChatStreamCoordinator(
+        appContext = context.applicationContext,
         applicationScope = applicationScope,
         conversationRepository = conversationRepository,
         settingsRepository = settingsRepository,

@@ -42,12 +42,13 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
@@ -67,16 +68,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -84,6 +83,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.composed
 import androidx.compose.ui.Modifier
@@ -92,11 +92,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -120,11 +117,13 @@ import dev.codex.android.ui.markdown.MarkdownText
 import dev.codex.android.ui.markdown.containsLikelyLatex
 import dev.codex.android.ui.theme.Mist
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
-import kotlin.math.roundToInt
 
 @Composable
 fun ChatRoute(
@@ -162,6 +161,7 @@ fun ChatRoute(
         onOpenSettings = onOpenSettings,
         onUpdateMessage = viewModel::updateMessage,
         onDeleteMessage = viewModel::deleteMessage,
+        onPersistScrollPosition = viewModel::persistScrollPosition,
         onRetryMessage = viewModel::retryFailedMessage,
         onStopStreaming = viewModel::stopStreaming,
     )
@@ -181,20 +181,21 @@ private fun ChatScreen(
     onOpenSettings: () -> Unit,
     onUpdateMessage: (Long, String) -> Unit,
     onDeleteMessage: (Long) -> Unit,
+    onPersistScrollPosition: (Long?, Int, Int) -> Unit,
     onRetryMessage: (Long) -> Unit,
     onStopStreaming: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    val messageOffsets = remember { mutableStateMapOf<Long, Int>() }
-    var messageViewportTopInRoot by remember { mutableStateOf(0f) }
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var deletingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var showImageSourceDialog by remember { mutableStateOf(false) }
-    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
-    var pendingCameraPath by remember { mutableStateOf<String?>(null) }
+    var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var hasRestoredScroll by remember(uiState.activeConversationId) { mutableStateOf(false) }
+    var lastObservedMessageCount by remember(uiState.activeConversationId) { mutableStateOf(0) }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10),
     ) { uris ->
@@ -203,9 +204,9 @@ private fun ChatScreen(
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
     ) { success ->
-        val uri = pendingCameraUri
+        val uri = pendingCameraUriString?.let(Uri::parse)
         val path = pendingCameraPath
-        pendingCameraUri = null
+        pendingCameraUriString = null
         pendingCameraPath = null
         if (success && uri != null) {
             onAddImages(listOf(uri))
@@ -214,10 +215,75 @@ private fun ChatScreen(
         }
     }
 
-    LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty()) {
+    LaunchedEffect(uiState.activeConversationId, uiState.messages, uiState.savedScrollPosition) {
+        if (hasRestoredScroll || uiState.messages.isEmpty()) return@LaunchedEffect
+
+        val savedPosition = uiState.savedScrollPosition
+        val targetIndex = when {
+            savedPosition?.anchorMessageId != null -> {
+                uiState.messages.indexOfFirst { it.id == savedPosition.anchorMessageId }
+                    .takeIf { it >= 0 }
+            }
+            savedPosition != null -> {
+                savedPosition.firstVisibleItemIndex.coerceIn(0, uiState.messages.lastIndex)
+            }
+            else -> uiState.messages.lastIndex
+        }
+
+        withFrameNanos { }
+        listState.scrollToItem(
+            index = targetIndex ?: uiState.messages.lastIndex,
+            scrollOffset = savedPosition?.firstVisibleItemScrollOffset?.coerceAtLeast(0) ?: 0,
+        )
+        lastObservedMessageCount = uiState.messages.size
+        hasRestoredScroll = true
+    }
+
+    LaunchedEffect(uiState.activeConversationId, uiState.messages.size, uiState.streamingMessageId, hasRestoredScroll) {
+        if (!hasRestoredScroll) return@LaunchedEffect
+
+        val currentCount = uiState.messages.size
+        val previousCount = lastObservedMessageCount
+        val hasNewMessages = currentCount > previousCount
+        val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
+        val totalItemCount = currentCount + if (uiState.streamingMessageId != null) 1 else 0
+        val isNearBottom = totalItemCount == 0 || lastVisibleIndex >= totalItemCount - 2
+
+        if (hasNewMessages && (previousCount == 0 || isNearBottom)) {
             withFrameNanos { }
-            scrollState.animateScrollTo(scrollState.maxValue)
+            listState.animateScrollToItem((totalItemCount - 1).coerceAtLeast(0))
+        }
+
+        lastObservedMessageCount = currentCount
+    }
+
+    @OptIn(FlowPreview::class)
+    LaunchedEffect(uiState.activeConversationId, uiState.messages) {
+        if (uiState.activeConversationId == null || uiState.messages.isEmpty()) return@LaunchedEffect
+
+        snapshotFlow {
+            Triple(
+                uiState.messages.getOrNull(listState.firstVisibleItemIndex)?.id,
+                listState.firstVisibleItemIndex,
+                listState.firstVisibleItemScrollOffset,
+            )
+        }
+            .distinctUntilChanged()
+            .debounce(250)
+            .collect { (anchorMessageId, index, offset) ->
+                onPersistScrollPosition(anchorMessageId, index, offset)
+            }
+    }
+
+    DisposableEffect(uiState.activeConversationId, uiState.messages) {
+        onDispose {
+            if (uiState.activeConversationId != null && uiState.messages.isNotEmpty()) {
+                onPersistScrollPosition(
+                    uiState.messages.getOrNull(listState.firstVisibleItemIndex)?.id,
+                    listState.firstVisibleItemIndex,
+                    listState.firstVisibleItemScrollOffset,
+                )
+            }
         }
     }
 
@@ -349,42 +415,36 @@ private fun ChatScreen(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
-                        .onGloballyPositioned { coordinates ->
-                            messageViewportTopInRoot = coordinates.positionInRoot().y
-                        },
+                        .fillMaxWidth(),
                 ) {
-                    Column(
+                    LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(scrollState)
-                            .padding(top = 8.dp, bottom = 18.dp),
+                            .padding(top = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(bottom = 18.dp),
                     ) {
-                        uiState.messages.forEach { message ->
-                            Box(
-                                modifier = Modifier.onGloballyPositioned { coordinates ->
-                                    val offset = (
-                                        scrollState.value + coordinates.positionInRoot().y - messageViewportTopInRoot
-                                    ).roundToInt().coerceAtLeast(0)
-                                    messageOffsets[message.id] = offset
-                                },
-                            ) {
-                                MessageBubble(
-                                    message = message,
-                                    isStreaming = uiState.streamingMessageId == message.id &&
-                                        message.role == MessageRole.ASSISTANT,
-                                    canRetry = message.isError &&
-                                        message.role == MessageRole.ASSISTANT &&
-                                        message.id == lastMessageId &&
-                                        !uiState.isSending,
-                                    onRetry = { onRetryMessage(message.id) },
-                                    onLongPress = { actionMessage = message },
-                                )
-                            }
+                        itemsIndexed(
+                            items = uiState.messages,
+                            key = { _, message -> message.id },
+                        ) { _, message ->
+                            MessageBubble(
+                                message = message,
+                                isStreaming = uiState.streamingMessageId == message.id &&
+                                    message.role == MessageRole.ASSISTANT,
+                                canRetry = message.isError &&
+                                    message.role == MessageRole.ASSISTANT &&
+                                    message.id == lastMessageId &&
+                                    !uiState.isSending,
+                                onRetry = { onRetryMessage(message.id) },
+                                onLongPress = { actionMessage = message },
+                            )
                         }
-                        AnimatedVisibility(visible = uiState.streamingMessageId != null) {
-                            TypingIndicatorBubble()
+                        if (uiState.streamingMessageId != null) {
+                            item(key = "typing-indicator") {
+                                TypingIndicatorBubble()
+                            }
                         }
                     }
 
@@ -393,30 +453,47 @@ private fun ChatScreen(
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
                                 .padding(end = 2.dp, bottom = 28.dp),
-                            canScrollUp = previousMessageOffset(
-                                currentScroll = scrollState.value,
-                                messageIds = uiState.messages.map { it.id },
-                                offsets = messageOffsets,
-                            ) != null || scrollState.value > 0,
-                            canScrollDown = scrollState.value < scrollState.maxValue,
+                            canScrollUp = listState.firstVisibleItemIndex > 0 ||
+                                listState.firstVisibleItemScrollOffset > 0,
+                            canScrollDown = listState.canScrollForward,
                             onScrollUp = {
-                                val target = previousMessageOffset(
-                                    currentScroll = scrollState.value,
-                                    messageIds = uiState.messages.map { it.id },
-                                    offsets = messageOffsets,
+                                val target = previousMessageIndex(
+                                    listState = listState,
+                                    messageCount = uiState.messages.size,
                                 )
                                 coroutineScope.launch {
-                                    scrollState.animateScrollTo(target ?: 0)
+                                    listState.animateScrollToItem(target ?: 0)
+                                }
+                            },
+                            onLongScrollUp = {
+                                coroutineScope.launch {
+                                    listState.scrollToItem(0)
                                 }
                             },
                             onScrollDown = {
-                                val target = nextMessageOffset(
-                                    currentScroll = scrollState.value,
-                                    messageIds = uiState.messages.map { it.id },
-                                    offsets = messageOffsets,
+                                val target = nextMessageIndex(
+                                    listState = listState,
+                                    messageCount = uiState.messages.size,
                                 )
                                 coroutineScope.launch {
-                                    scrollState.animateScrollTo(target ?: scrollState.maxValue)
+                                    if (target != null) {
+                                        listState.animateScrollToItem(target)
+                                    } else {
+                                        scrollToConversationBottom(
+                                            listState = listState,
+                                            lastMessageIndex = uiState.messages.lastIndex,
+                                            animated = true,
+                                        )
+                                    }
+                                }
+                            },
+                            onLongScrollDown = {
+                                coroutineScope.launch {
+                                    scrollToConversationBottom(
+                                        listState = listState,
+                                        lastMessageIndex = (uiState.messages.size - 1).coerceAtLeast(0),
+                                        animated = false,
+                                    )
                                 }
                             },
                         )
@@ -442,7 +519,7 @@ private fun ChatScreen(
     }
 
     editingMessage?.let { message ->
-        EditMessageDialog(
+        EditMessageScreen(
             message = message,
             onDismiss = { editingMessage = null },
             onConfirm = { newContent ->
@@ -497,7 +574,7 @@ private fun ChatScreen(
                             showImageSourceDialog = false
                             val capture = createCameraImageCapture(context)
                             if (capture != null) {
-                                pendingCameraUri = capture.uri
+                                pendingCameraUriString = capture.uri.toString()
                                 pendingCameraPath = capture.path
                                 cameraLauncher.launch(capture.uri)
                             }
@@ -587,7 +664,9 @@ private fun QuickScrollControls(
     canScrollUp: Boolean,
     canScrollDown: Boolean,
     onScrollUp: () -> Unit,
+    onLongScrollUp: () -> Unit,
     onScrollDown: () -> Unit,
+    onLongScrollDown: () -> Unit,
 ) {
     Column(
         modifier = modifier,
@@ -598,11 +677,13 @@ private fun QuickScrollControls(
             icon = Icons.Rounded.KeyboardArrowUp,
             enabled = canScrollUp,
             onClick = onScrollUp,
+            onLongPress = onLongScrollUp,
         )
         QuickScrollButton(
             icon = Icons.Rounded.KeyboardArrowDown,
             enabled = canScrollDown,
             onClick = onScrollDown,
+            onLongPress = onLongScrollDown,
         )
     }
 }
@@ -612,8 +693,13 @@ private fun QuickScrollButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     enabled: Boolean,
     onClick: () -> Unit,
+    onLongPress: () -> Unit,
 ) {
     Surface(
+        modifier = Modifier.noHapticPressGesture(
+            onClick = onClick.takeIf { enabled },
+            onLongPress = onLongPress.takeIf { enabled },
+        ),
         shape = CircleShape,
         color = if (enabled) {
             MaterialTheme.colorScheme.surface
@@ -623,10 +709,9 @@ private fun QuickScrollButton(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)),
         shadowElevation = 2.dp,
     ) {
-        IconButton(
-            onClick = onClick,
-            enabled = enabled,
+        Box(
             modifier = Modifier.size(34.dp),
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = icon,
@@ -1288,13 +1373,19 @@ private fun loadBitmap(
     path: String,
 ): Bitmap? {
     val file = File(path)
-    if (!file.exists()) return null
+    if (!file.exists() || file.length() == 0L) return null
 
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        ImageDecoder.decodeBitmap(ImageDecoder.createSource(file))
-    } else {
-        BitmapFactory.decodeFile(file.absolutePath)
-    }
+    return runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, _, _ ->
+                decoder.setOnPartialImageListener { exception ->
+                    exception.error == ImageDecoder.DecodeException.SOURCE_INCOMPLETE
+                }
+            }
+        } else {
+            BitmapFactory.decodeFile(file.absolutePath)
+        }
+    }.getOrNull()
 }
 
 private data class CameraImageCapture(
@@ -1335,29 +1426,42 @@ private fun Modifier.noHapticPressGesture(
     }
 }
 
-private fun previousMessageOffset(
-    currentScroll: Int,
-    messageIds: List<Long>,
-    offsets: Map<Long, Int>,
+private fun previousMessageIndex(
+    listState: LazyListState,
+    messageCount: Int,
 ): Int? {
-    val currentAnchor = (currentScroll - 8).coerceAtLeast(0)
-    return messageIds
-        .mapNotNull(offsets::get)
-        .filter { it < currentAnchor }
-        .maxOrNull()
-        ?.coerceAtLeast(0)
+    if (messageCount == 0) return null
+
+    val currentIndex = listState.firstVisibleItemIndex.coerceIn(0, messageCount - 1)
+    return if (listState.firstVisibleItemScrollOffset > 0) {
+        currentIndex
+    } else {
+        (currentIndex - 1).takeIf { it >= 0 }
+    }
 }
 
-private fun nextMessageOffset(
-    currentScroll: Int,
-    messageIds: List<Long>,
-    offsets: Map<Long, Int>,
+private fun nextMessageIndex(
+    listState: LazyListState,
+    messageCount: Int,
 ): Int? {
-    val currentAnchor = currentScroll + 8
-    return messageIds
-        .mapNotNull(offsets::get)
-        .filter { it > currentAnchor }
-        .minOrNull()
+    if (messageCount == 0) return null
+
+    val currentIndex = listState.firstVisibleItemIndex.coerceIn(0, messageCount - 1)
+    return (currentIndex + 1).takeIf { it < messageCount }
+}
+
+private suspend fun scrollToConversationBottom(
+    listState: LazyListState,
+    lastMessageIndex: Int,
+    animated: Boolean,
+) {
+    if (lastMessageIndex < 0) return
+
+    if (animated) {
+        listState.animateScrollToItem(lastMessageIndex, Int.MAX_VALUE)
+    } else {
+        listState.scrollToItem(lastMessageIndex, Int.MAX_VALUE)
+    }
 }
 
 @Composable
@@ -1460,52 +1564,6 @@ private fun MessageActionDialog(
             }
         }
     }
-}
-
-@Composable
-private fun EditMessageDialog(
-    message: ChatMessage,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    var value by rememberSaveable(message.id) { mutableStateOf(message.content) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(
-                    if (message.role == MessageRole.ASSISTANT) {
-                        R.string.message_edit_title_assistant
-                    } else {
-                        R.string.message_edit_title_user
-                    },
-                ),
-            )
-        },
-        text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 4,
-                maxLines = 10,
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(value.trim()) },
-                enabled = value.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
 }
 
 @Composable

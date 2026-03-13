@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.codex.android.data.model.ChatMessage
+import dev.codex.android.data.model.ConversationScrollPosition
 import dev.codex.android.data.model.MessageRole
 import dev.codex.android.core.di.AppContainer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -30,6 +32,7 @@ data class ChatUiState(
     val modelAlias: String = "",
     val reasoningEffort: String = "",
     val hasCredentials: Boolean = false,
+    val savedScrollPosition: ConversationScrollPosition? = null,
 )
 
 class ChatViewModel(
@@ -55,12 +58,24 @@ class ChatViewModel(
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val savedScrollPosition = activeConversationId.flatMapLatest { conversationId ->
+        if (conversationId == null) {
+            flowOf<ConversationScrollPosition?>(null)
+        } else {
+            flow {
+                emit(container.settingsRepository.getConversationScrollPosition(conversationId))
+            }
+        }
+    }
+
     val uiState = combine(
         activeConversationId,
         messages,
         container.chatStreamCoordinator.activeStreamState,
         container.settingsRepository.settings,
-    ) { conversationId, messageList, activeStream, settings ->
+        savedScrollPosition,
+    ) { conversationId, messageList, activeStream, settings, scrollPosition ->
         ChatUiState(
             title = messageList.firstOrNull { it.role == MessageRole.USER }?.content?.take(36).orEmpty()
                 .ifBlank { "" },
@@ -74,6 +89,7 @@ class ChatViewModel(
             modelAlias = settings.modelAlias,
             reasoningEffort = settings.reasoningEffort,
             hasCredentials = settings.apiKey.isNotBlank(),
+            savedScrollPosition = scrollPosition,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -149,6 +165,24 @@ class ChatViewModel(
             if (conversationDeleted) {
                 activeConversationId.value = null
             }
+        }
+    }
+
+    fun persistScrollPosition(
+        anchorMessageId: Long?,
+        firstVisibleItemIndex: Int,
+        firstVisibleItemScrollOffset: Int,
+    ) {
+        val conversationId = activeConversationId.value ?: return
+        viewModelScope.launch {
+            container.settingsRepository.saveConversationScrollPosition(
+                conversationId = conversationId,
+                position = ConversationScrollPosition(
+                    anchorMessageId = anchorMessageId,
+                    firstVisibleItemIndex = firstVisibleItemIndex,
+                    firstVisibleItemScrollOffset = firstVisibleItemScrollOffset,
+                ),
+            )
         }
     }
 }

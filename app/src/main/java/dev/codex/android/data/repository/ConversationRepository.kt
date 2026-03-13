@@ -214,6 +214,7 @@ class ConversationRepository(
         val attachments = chatDao.getMessages(conversationId).flatMap { decodeImagePaths(it.imagePaths) }
         chatDao.deleteConversation(conversationId)
         attachmentStorage.deleteAttachments(attachments)
+        settingsRepository.clearConversationScrollPosition(conversationId)
     }
 
     private suspend fun refreshConversationSnapshot(conversationId: Long): Boolean {
@@ -221,6 +222,7 @@ class ConversationRepository(
         val messages = chatDao.getMessages(conversationId)
         if (messages.isEmpty()) {
             chatDao.deleteConversation(conversationId)
+            settingsRepository.clearConversationScrollPosition(conversationId)
             return true
         }
 
