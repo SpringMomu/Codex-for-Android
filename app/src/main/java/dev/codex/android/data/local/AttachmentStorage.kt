@@ -2,6 +2,7 @@ package dev.codex.android.data.local
 
 import android.content.Context
 import android.net.Uri
+import dev.codex.android.core.media.ImageProcessing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -37,6 +38,10 @@ class AttachmentStorage(
                     input.copyTo(output)
                 }
             } ?: return null
+            ImageProcessing.normalizeImportedImage(
+                file = destination,
+                mimeType = mimeType,
+            )
             destination.absolutePath
         }.getOrNull()
     }

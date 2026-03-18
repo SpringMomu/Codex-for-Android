@@ -2,10 +2,7 @@ package dev.codex.android.feature.chat
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.ImageDecoder
 import android.net.Uri
-import android.os.Build
 import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -94,7 +91,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -109,6 +108,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.codex.android.R
 import dev.codex.android.core.di.AppContainer
+import dev.codex.android.core.media.ImageProcessing
 import dev.codex.android.data.model.ChatActivity
 import dev.codex.android.data.model.ChatMessage
 import dev.codex.android.data.model.MessageRole
@@ -1232,10 +1232,21 @@ private fun AttachmentThumbnail(
     onClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
 ) {
-    val context = LocalContext.current
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, path) {
+    val density = LocalDensity.current
+    val thumbnailSizePx = with(density) {
+        val longestEdge = maxOf(
+            72.dp.roundToPx(),
+            116.dp.roundToPx(),
+        )
+        longestEdge * 2
+    }
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, path, thumbnailSizePx) {
         value = withContext(Dispatchers.IO) {
-            loadBitmap(context, path)?.asImageBitmap()
+            loadBitmap(
+                path = path,
+                targetWidthPx = thumbnailSizePx,
+                targetHeightPx = thumbnailSizePx,
+            )?.asImageBitmap()
         }
     }
 
@@ -1282,10 +1293,21 @@ private fun ImagePreviewDialog(
     path: String,
     onDismiss: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, path) {
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val previewWidthPx = with(density) {
+        configuration.screenWidthDp.dp.roundToPx().coerceAtLeast(1) * 2
+    }
+    val previewHeightPx = with(density) {
+        configuration.screenHeightDp.dp.roundToPx().coerceAtLeast(1) * 2
+    }
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, path, previewWidthPx, previewHeightPx) {
         value = withContext(Dispatchers.IO) {
-            loadBitmap(context, path)?.asImageBitmap()
+            loadBitmap(
+                path = path,
+                targetWidthPx = previewWidthPx,
+                targetHeightPx = previewHeightPx,
+            )?.asImageBitmap()
         }
     }
     var scale by remember(path) { mutableStateOf(1f) }
@@ -1369,22 +1391,16 @@ private fun ImagePreviewDialog(
 }
 
 private fun loadBitmap(
-    context: Context,
     path: String,
+    targetWidthPx: Int,
+    targetHeightPx: Int,
 ): Bitmap? {
-    val file = File(path)
-    if (!file.exists() || file.length() == 0L) return null
-
     return runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, _, _ ->
-                decoder.setOnPartialImageListener { exception ->
-                    exception.error == ImageDecoder.DecodeException.SOURCE_INCOMPLETE
-                }
-            }
-        } else {
-            BitmapFactory.decodeFile(file.absolutePath)
-        }
+        ImageProcessing.loadBitmapForDisplay(
+            path = path,
+            targetWidthPx = targetWidthPx,
+            targetHeightPx = targetHeightPx,
+        )
     }.getOrNull()
 }
 

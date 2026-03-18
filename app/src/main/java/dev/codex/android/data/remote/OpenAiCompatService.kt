@@ -1,6 +1,7 @@
 package dev.codex.android.data.remote
 
 import dev.codex.android.core.i18n.AppStrings
+import dev.codex.android.core.media.ImageProcessing
 import dev.codex.android.data.model.AppSettings
 import dev.codex.android.data.model.ChatMessage
 import dev.codex.android.data.model.MessageRole
@@ -18,7 +19,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.Base64
 
 class OpenAiCompatService(
@@ -367,16 +367,10 @@ class OpenAiCompatService(
     }
 
     private fun fileToDataUrl(path: String): String {
-        val file = File(path)
-        val bytes = file.readBytes()
-        val mimeType = when (file.extension.lowercase()) {
-            "png" -> "image/png"
-            "webp" -> "image/webp"
-            "gif" -> "image/gif"
-            else -> "image/jpeg"
-        }
-        val base64 = Base64.getEncoder().encodeToString(bytes)
-        return "data:$mimeType;base64,$base64"
+        val preparedImage = ImageProcessing.prepareImageForUpload(path)
+            ?: error("Unable to read attachment: $path")
+        val base64 = Base64.getEncoder().encodeToString(preparedImage.bytes)
+        return "data:${preparedImage.mimeType};base64,$base64"
     }
 
     @Serializable
