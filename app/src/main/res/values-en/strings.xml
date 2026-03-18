@@ -43,6 +43,13 @@
     <string name="open_history">History</string>
     <string name="open_settings">Settings</string>
     <string name="start_new_conversation">New chat</string>
+    <string name="chat_search_open">Search current chat</string>
+    <string name="chat_search_close">Close chat search</string>
+    <string name="chat_search_placeholder">Search this conversation</string>
+    <string name="chat_search_result_count">%1$d/%2$d</string>
+    <string name="chat_search_result_empty">0/0</string>
+    <string name="chat_search_previous">Previous matching message</string>
+    <string name="chat_search_next">Next matching message</string>
     <string name="empty_chat_title">How can I help today</string>
     <string name="remove_image">Remove image</string>
     <string name="retry">Retry</string>

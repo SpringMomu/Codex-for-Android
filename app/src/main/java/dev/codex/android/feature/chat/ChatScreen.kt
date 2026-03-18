@@ -19,6 +19,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,6 +58,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
@@ -65,6 +67,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -90,14 +94,19 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntSize
@@ -124,6 +133,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import kotlin.math.abs
 
 @Composable
 fun ChatRoute(
@@ -196,6 +206,12 @@ private fun ChatScreen(
     var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
     var hasRestoredScroll by remember(uiState.activeConversationId) { mutableStateOf(false) }
     var lastObservedMessageCount by remember(uiState.activeConversationId) { mutableStateOf(0) }
+    var isSearchMode by rememberSaveable(uiState.activeConversationId) { mutableStateOf(false) }
+    var searchQuery by rememberSaveable(uiState.activeConversationId) { mutableStateOf("") }
+    var currentSearchResultIndex by rememberSaveable(uiState.activeConversationId) { mutableStateOf(-1) }
+    var lastSearchQuery by rememberSaveable(uiState.activeConversationId) { mutableStateOf("") }
+    var searchViewport by remember { mutableStateOf<SearchViewport?>(null) }
+    var activeSearchTargetCenterY by remember { mutableStateOf<Float?>(null) }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10),
     ) { uris ->
@@ -285,6 +301,127 @@ private fun ChatScreen(
                 )
             }
         }
+    }
+
+    val effectiveSearchQuery = searchQuery.takeIf { isSearchMode }.orEmpty()
+    val searchMatches = remember(uiState.messages, effectiveSearchQuery) {
+        findConversationMatches(
+            messages = uiState.messages,
+            query = effectiveSearchQuery,
+        )
+    }
+    val matchedContentMessageIds = remember(searchMatches) {
+        searchMatches.asSequence()
+            .filter { it.section == SearchSection.CONTENT }
+            .map { it.messageId }
+            .toSet()
+    }
+    val matchedReasoningMessageIds = remember(searchMatches) {
+        searchMatches.asSequence()
+            .filter { it.section == SearchSection.REASONING_SUMMARY }
+            .map { it.messageId }
+            .toSet()
+    }
+    val activeSearchMatch = searchMatches.getOrNull(currentSearchResultIndex)
+
+    LaunchedEffect(isSearchMode, effectiveSearchQuery, searchMatches) {
+        if (!isSearchMode) return@LaunchedEffect
+
+        if (effectiveSearchQuery.isBlank()) {
+            currentSearchResultIndex = -1
+            lastSearchQuery = effectiveSearchQuery
+            return@LaunchedEffect
+        }
+
+        val queryChanged = effectiveSearchQuery != lastSearchQuery
+        lastSearchQuery = effectiveSearchQuery
+
+        if (searchMatches.isEmpty()) {
+            currentSearchResultIndex = -1
+            return@LaunchedEffect
+        }
+
+        if (queryChanged || currentSearchResultIndex !in searchMatches.indices) {
+            currentSearchResultIndex = 0
+        }
+    }
+
+    LaunchedEffect(activeSearchMatch, currentSearchResultIndex, isSearchMode) {
+        if (!isSearchMode || activeSearchMatch == null) return@LaunchedEffect
+
+        activeSearchTargetCenterY = null
+        withFrameNanos { }
+
+        val isVisible = listState.layoutInfo.visibleItemsInfo.any { it.index == activeSearchMatch.messageIndex }
+        if (!isVisible) {
+            listState.scrollToItem(activeSearchMatch.messageIndex)
+            withFrameNanos { }
+        }
+
+        val viewport = searchViewport ?: return@LaunchedEffect
+        val desiredCenterY = viewport.height / 2f
+
+        var targetCenterY = resolvePreciseSearchTargetCenterInViewport(
+            searchViewport = searchViewport,
+            activeSearchTargetCenterY = activeSearchTargetCenterY,
+        )
+        for (frame in 0 until SEARCH_TARGET_WAIT_FRAMES) {
+            if (targetCenterY != null && searchViewport != null) {
+                break
+            }
+            withFrameNanos { }
+            targetCenterY = resolvePreciseSearchTargetCenterInViewport(
+                searchViewport = searchViewport,
+                activeSearchTargetCenterY = activeSearchTargetCenterY,
+            )
+        }
+
+        val initialTargetCenterY = targetCenterY ?: resolveSearchTargetCenterInViewport(
+            listState = listState,
+            messageIndex = activeSearchMatch.messageIndex,
+            searchViewport = viewport,
+            activeSearchTargetCenterY = activeSearchTargetCenterY,
+        ) ?: return@LaunchedEffect
+
+        val initialDelta = initialTargetCenterY - desiredCenterY
+        if (abs(initialDelta) > SEARCH_CENTERING_TOLERANCE_PX) {
+            val before = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+            listState.scrollBy(initialDelta)
+            withFrameNanos { }
+            val after = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+            if (before == after) {
+                return@LaunchedEffect
+            }
+        }
+
+        var refinedTargetCenterY = resolvePreciseSearchTargetCenterInViewport(
+            searchViewport = searchViewport,
+            activeSearchTargetCenterY = activeSearchTargetCenterY,
+        )
+        for (frame in 0 until SEARCH_REFINEMENT_WAIT_FRAMES) {
+            if (refinedTargetCenterY != null && searchViewport != null) {
+                break
+            }
+            withFrameNanos { }
+            refinedTargetCenterY = resolvePreciseSearchTargetCenterInViewport(
+                searchViewport = searchViewport,
+                activeSearchTargetCenterY = activeSearchTargetCenterY,
+            )
+        }
+
+        val correctedViewport = searchViewport ?: viewport
+        val correctedTargetCenterY = refinedTargetCenterY ?: resolveSearchTargetCenterInViewport(
+            listState = listState,
+            messageIndex = activeSearchMatch.messageIndex,
+            searchViewport = correctedViewport,
+            activeSearchTargetCenterY = activeSearchTargetCenterY,
+        ) ?: return@LaunchedEffect
+        val correctionDelta = correctedTargetCenterY - correctedViewport.height / 2f
+        if (abs(correctionDelta) <= SEARCH_CENTERING_TOLERANCE_PX) {
+            return@LaunchedEffect
+        }
+
+        listState.scrollBy(correctionDelta)
     }
 
     Scaffold(
@@ -392,6 +529,10 @@ private fun ChatScreen(
         ) {
             ChatHeader(
                 modelName = uiState.modelAlias.ifBlank { modelPlaceholder },
+                isSearchMode = isSearchMode,
+                onOpenSearch = {
+                    isSearchMode = true
+                },
                 onOpenHistory = onOpenHistory,
                 onOpenSettings = onOpenSettings,
                 onNewConversation = onNewConversation,
@@ -399,6 +540,48 @@ private fun ChatScreen(
                     .fillMaxWidth()
                     .padding(top = 8.dp, bottom = 8.dp),
             )
+            AnimatedVisibility(
+                visible = isSearchMode,
+                enter = expandVertically(),
+                exit = shrinkVertically(),
+            ) {
+                ConversationSearchBar(
+                    query = searchQuery,
+                    matchSummary = when {
+                        searchQuery.isBlank() -> null
+                        searchMatches.isEmpty() -> stringResource(R.string.chat_search_result_empty)
+                        else -> stringResource(
+                            R.string.chat_search_result_count,
+                            currentSearchResultIndex + 1,
+                            searchMatches.size,
+                        )
+                    },
+                    onQueryChange = { searchQuery = it },
+                    onClose = {
+                        isSearchMode = false
+                    },
+                    onPrevious = {
+                        if (searchMatches.isEmpty()) return@ConversationSearchBar
+                        currentSearchResultIndex = if (currentSearchResultIndex in searchMatches.indices) {
+                            (currentSearchResultIndex - 1 + searchMatches.size) % searchMatches.size
+                        } else {
+                            searchMatches.lastIndex
+                        }
+                    },
+                    onNext = {
+                        if (searchMatches.isEmpty()) return@ConversationSearchBar
+                        currentSearchResultIndex = if (currentSearchResultIndex in searchMatches.indices) {
+                            (currentSearchResultIndex + 1) % searchMatches.size
+                        } else {
+                            0
+                        }
+                    },
+                    hasMatches = searchMatches.isNotEmpty(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                )
+            }
             if (uiState.messages.isEmpty()) {
                 Column(
                     modifier = Modifier.weight(1f),
@@ -421,7 +604,13 @@ private fun ChatScreen(
                         state = listState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = 8.dp),
+                            .padding(top = 8.dp)
+                            .onGloballyPositioned { coordinates ->
+                                searchViewport = SearchViewport(
+                                    topY = coordinates.positionInRoot().y,
+                                    height = coordinates.size.height.toFloat(),
+                                )
+                            },
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         contentPadding = PaddingValues(bottom = 18.dp),
                     ) {
@@ -437,6 +626,30 @@ private fun ChatScreen(
                                     message.role == MessageRole.ASSISTANT &&
                                     message.id == lastMessageId &&
                                     !uiState.isSending,
+                                contentSearchQuery = effectiveSearchQuery.takeIf {
+                                    matchedContentMessageIds.contains(message.id)
+                                }.orEmpty(),
+                                reasoningSearchQuery = effectiveSearchQuery.takeIf {
+                                    matchedReasoningMessageIds.contains(message.id)
+                                }.orEmpty(),
+                                activeContentOccurrenceIndex = activeSearchMatch
+                                    ?.takeIf {
+                                        it.messageId == message.id &&
+                                            it.section == SearchSection.CONTENT
+                                    }
+                                    ?.occurrenceIndex,
+                                activeReasoningOccurrenceIndex = activeSearchMatch
+                                    ?.takeIf {
+                                        it.messageId == message.id &&
+                                            it.section == SearchSection.REASONING_SUMMARY
+                                    }
+                                    ?.occurrenceIndex,
+                                forceExpandReasoning = isSearchMode &&
+                                    activeSearchMatch?.messageId == message.id &&
+                                    activeSearchMatch?.section == SearchSection.REASONING_SUMMARY,
+                                onActiveSearchTargetPositioned = { centerY ->
+                                    activeSearchTargetCenterY = centerY
+                                },
                                 onRetry = { onRetryMessage(message.id) },
                                 onLongPress = { actionMessage = message },
                             )
@@ -594,6 +807,8 @@ private fun ChatScreen(
 @Composable
 private fun ChatHeader(
     modelName: String,
+    isSearchMode: Boolean,
+    onOpenSearch: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onNewConversation: () -> Unit,
@@ -622,6 +837,12 @@ private fun ChatHeader(
             )
         }
         HeaderActionButton(
+            icon = Icons.Rounded.Search,
+            contentDescription = stringResource(R.string.chat_search_open),
+            onClick = onOpenSearch,
+            active = isSearchMode,
+        )
+        HeaderActionButton(
             icon = Icons.Rounded.History,
             contentDescription = stringResource(R.string.open_history),
             onClick = onOpenHistory,
@@ -644,17 +865,150 @@ private fun HeaderActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
+    active: Boolean = false,
 ) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier.size(38.dp),
+    Surface(
+        shape = CircleShape,
+        color = if (active) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        } else {
+            Color.Transparent
+        },
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.size(20.dp),
-        )
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(38.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = if (active) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onBackground
+                },
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConversationSearchBar(
+    query: String,
+    matchSummary: String?,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    hasMatches: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(18.dp),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = null,
+                        )
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { onQueryChange("") }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.cancel),
+                                )
+                            }
+                        }
+                    },
+                    placeholder = {
+                        Text(stringResource(R.string.chat_search_placeholder))
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.outline,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedContainerColor = MaterialTheme.colorScheme.background,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.background,
+                        disabledContainerColor = MaterialTheme.colorScheme.background,
+                        focusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        focusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        cursorColor = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.chat_search_close),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    matchSummary?.let { summary ->
+                        Text(
+                            text = summary,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = onPrevious,
+                        enabled = hasMatches,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowUp,
+                            contentDescription = stringResource(R.string.chat_search_previous),
+                        )
+                    }
+                    IconButton(
+                        onClick = onNext,
+                        enabled = hasMatches,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = stringResource(R.string.chat_search_next),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -828,6 +1182,12 @@ private fun MessageBubble(
     message: ChatMessage,
     isStreaming: Boolean,
     canRetry: Boolean,
+    contentSearchQuery: String,
+    reasoningSearchQuery: String,
+    activeContentOccurrenceIndex: Int?,
+    activeReasoningOccurrenceIndex: Int?,
+    forceExpandReasoning: Boolean,
+    onActiveSearchTargetPositioned: (Float) -> Unit,
     onRetry: () -> Unit,
     onLongPress: () -> Unit,
 ) {
@@ -883,6 +1243,10 @@ private fun MessageBubble(
                             messageId = message.id,
                             summary = message.reasoningSummary,
                             contentColor = contentColor,
+                            highlightQuery = reasoningSearchQuery,
+                            activeOccurrenceIndex = activeReasoningOccurrenceIndex,
+                            forceExpanded = forceExpandReasoning,
+                            onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
                             onLongPress = onLongPress,
                         )
                     }
@@ -897,6 +1261,9 @@ private fun MessageBubble(
                             message = message,
                             isStreaming = isStreaming,
                             contentColor = contentColor,
+                            highlightQuery = contentSearchQuery,
+                            activeOccurrenceIndex = activeContentOccurrenceIndex,
+                            onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
                             onLongPress = onLongPress,
                         )
                     }
@@ -940,17 +1307,72 @@ private fun MessageBubble(
     }
 }
 
+private data class ConversationSearchMatch(
+    val messageId: Long,
+    val messageIndex: Int,
+    val section: SearchSection,
+    val occurrenceIndex: Int,
+)
+
+private data class SearchViewport(
+    val topY: Float,
+    val height: Float,
+)
+
+private enum class SearchSection {
+    CONTENT,
+    REASONING_SUMMARY,
+}
+
+private fun findConversationMatches(
+    messages: List<ChatMessage>,
+    query: String,
+): List<ConversationSearchMatch> {
+    if (query.isBlank()) return emptyList()
+
+    return buildList {
+        messages.forEachIndexed { index, message ->
+            findTextMatches(message.content, query).forEachIndexed { occurrenceIndex, _ ->
+                add(
+                    ConversationSearchMatch(
+                        messageId = message.id,
+                        messageIndex = index,
+                        section = SearchSection.CONTENT,
+                        occurrenceIndex = occurrenceIndex,
+                    ),
+                )
+            }
+            findTextMatches(message.reasoningSummary, query).forEachIndexed { occurrenceIndex, _ ->
+                add(
+                    ConversationSearchMatch(
+                        messageId = message.id,
+                        messageIndex = index,
+                        section = SearchSection.REASONING_SUMMARY,
+                        occurrenceIndex = occurrenceIndex,
+                    ),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun MessageBody(
     message: ChatMessage,
     isStreaming: Boolean,
     contentColor: Color,
+    highlightQuery: String,
+    activeOccurrenceIndex: Int?,
+    onActiveSearchTargetPositioned: (Float) -> Unit,
     onLongPress: () -> Unit,
 ) {
     if (isStreaming) {
         StreamingMessageText(
             text = message.content,
             contentColor = contentColor,
+            highlightQuery = highlightQuery,
+            activeOccurrenceIndex = activeOccurrenceIndex,
+            onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
         )
         return
     }
@@ -959,12 +1381,18 @@ private fun MessageBody(
         MarkdownText(
             markdown = message.content,
             contentColor = contentColor,
+            highlightQuery = highlightQuery,
+            activeOccurrenceIndex = activeOccurrenceIndex,
+            onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
             onLongPress = onLongPress,
         )
     } else {
         PlainMessageText(
             text = message.content,
             contentColor = contentColor,
+            highlightQuery = highlightQuery,
+            activeOccurrenceIndex = activeOccurrenceIndex,
+            onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
         )
     }
 }
@@ -973,10 +1401,33 @@ private fun MessageBody(
 private fun PlainMessageText(
     text: String,
     contentColor: Color,
+    highlightQuery: String,
+    activeOccurrenceIndex: Int?,
+    onActiveSearchTargetPositioned: (Float) -> Unit,
 ) {
+    val inactiveHighlightColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.88f)
+    val activeHighlightColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.34f)
+    val displayText = remember(text, highlightQuery, activeOccurrenceIndex, contentColor, inactiveHighlightColor, activeHighlightColor) {
+        buildHighlightedAnnotatedString(
+            text = text,
+            query = highlightQuery,
+            textColor = contentColor,
+            inactiveHighlightColor = inactiveHighlightColor,
+            activeHighlightColor = activeHighlightColor,
+            activeOccurrenceIndex = activeOccurrenceIndex,
+        )
+    }
     Text(
-        text = text,
-        modifier = Modifier.fillMaxWidth(),
+        text = displayText,
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coordinates ->
+                if (highlightQuery.isNotBlank() && activeOccurrenceIndex != null) {
+                    onActiveSearchTargetPositioned(
+                        coordinates.positionInRoot().y + coordinates.size.height / 2f,
+                    )
+                }
+            },
         style = MaterialTheme.typography.bodyLarge,
         color = contentColor,
     )
@@ -1030,10 +1481,33 @@ private fun isAsciiTableBorder(line: String): Boolean =
 private fun StreamingMessageText(
     text: String,
     contentColor: androidx.compose.ui.graphics.Color,
+    highlightQuery: String,
+    activeOccurrenceIndex: Int?,
+    onActiveSearchTargetPositioned: (Float) -> Unit,
 ) {
+    val inactiveHighlightColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.88f)
+    val activeHighlightColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.34f)
+    val displayText = remember(text, highlightQuery, activeOccurrenceIndex, contentColor, inactiveHighlightColor, activeHighlightColor) {
+        buildHighlightedAnnotatedString(
+            text = text,
+            query = highlightQuery,
+            textColor = contentColor,
+            inactiveHighlightColor = inactiveHighlightColor,
+            activeHighlightColor = activeHighlightColor,
+            activeOccurrenceIndex = activeOccurrenceIndex,
+        )
+    }
     Text(
-        text = text,
-        modifier = Modifier.fillMaxWidth(),
+        text = displayText,
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coordinates ->
+                if (highlightQuery.isNotBlank() && activeOccurrenceIndex != null) {
+                    onActiveSearchTargetPositioned(
+                        coordinates.positionInRoot().y + coordinates.size.height / 2f,
+                    )
+                }
+            },
         style = MaterialTheme.typography.bodyLarge,
         color = contentColor,
         softWrap = true,
@@ -1138,15 +1612,24 @@ private fun InlineActivityDots() {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ReasoningSummarySection(
     messageId: Long,
     summary: String,
     contentColor: androidx.compose.ui.graphics.Color,
+    highlightQuery: String,
+    activeOccurrenceIndex: Int?,
+    forceExpanded: Boolean,
+    onActiveSearchTargetPositioned: (Float) -> Unit,
     onLongPress: () -> Unit,
 ) {
     var expanded by rememberSaveable(messageId) { mutableStateOf(false) }
+
+    LaunchedEffect(forceExpanded, highlightQuery, activeOccurrenceIndex) {
+        if (forceExpanded && highlightQuery.isNotBlank() && activeOccurrenceIndex != null) {
+            expanded = true
+        }
+    }
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -1190,9 +1673,80 @@ private fun ReasoningSummarySection(
                 MarkdownText(
                     markdown = summary,
                     contentColor = contentColor,
+                    highlightQuery = highlightQuery,
+                    activeOccurrenceIndex = activeOccurrenceIndex,
+                    onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
                 )
             }
         }
+    }
+}
+
+private data class TextMatch(
+    val start: Int,
+    val endExclusive: Int,
+)
+
+private fun findTextMatches(
+    text: String,
+    query: String,
+): List<TextMatch> {
+    if (query.isBlank()) return emptyList()
+
+    val matches = mutableListOf<TextMatch>()
+    var startIndex = 0
+    while (startIndex < text.length) {
+        val matchIndex = text.indexOf(
+            string = query,
+            startIndex = startIndex,
+            ignoreCase = true,
+        )
+        if (matchIndex < 0) break
+        matches += TextMatch(
+            start = matchIndex,
+            endExclusive = matchIndex + query.length,
+        )
+        startIndex = matchIndex + query.length
+    }
+    return matches
+}
+
+private fun buildHighlightedAnnotatedString(
+    text: String,
+    query: String,
+    textColor: Color,
+    inactiveHighlightColor: Color,
+    activeHighlightColor: Color,
+    activeOccurrenceIndex: Int?,
+) = buildAnnotatedString {
+    val matches = findTextMatches(text, query)
+    if (matches.isEmpty()) {
+        append(text)
+        return@buildAnnotatedString
+    }
+
+    var cursor = 0
+    matches.forEachIndexed { index, match ->
+        if (cursor < match.start) {
+            append(text.substring(cursor, match.start))
+        }
+        withStyle(
+            SpanStyle(
+                color = textColor,
+                background = if (index == activeOccurrenceIndex) {
+                    activeHighlightColor
+                } else {
+                    inactiveHighlightColor
+                },
+            ),
+        ) {
+            append(text.substring(match.start, match.endExclusive))
+        }
+        cursor = match.endExclusive
+    }
+
+    if (cursor < text.length) {
+        append(text.substring(cursor))
     }
 }
 
@@ -1464,6 +2018,34 @@ private fun nextMessageIndex(
 
     val currentIndex = listState.firstVisibleItemIndex.coerceIn(0, messageCount - 1)
     return (currentIndex + 1).takeIf { it < messageCount }
+}
+
+private fun resolveSearchTargetCenterInViewport(
+    listState: LazyListState,
+    messageIndex: Int,
+    searchViewport: SearchViewport,
+    activeSearchTargetCenterY: Float?,
+): Float? {
+    resolvePreciseSearchTargetCenterInViewport(
+        searchViewport = searchViewport,
+        activeSearchTargetCenterY = activeSearchTargetCenterY,
+    )?.let { return it }
+
+    val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == messageIndex }
+        ?: return null
+    return itemInfo.offset + itemInfo.size / 2f
+}
+
+private const val SEARCH_CENTERING_TOLERANCE_PX = 24f
+private const val SEARCH_TARGET_WAIT_FRAMES = 12
+private const val SEARCH_REFINEMENT_WAIT_FRAMES = 8
+
+private fun resolvePreciseSearchTargetCenterInViewport(
+    searchViewport: SearchViewport?,
+    activeSearchTargetCenterY: Float?,
+): Float? {
+    if (searchViewport == null || activeSearchTargetCenterY == null) return null
+    return activeSearchTargetCenterY - searchViewport.topY
 }
 
 private suspend fun scrollToConversationBottom(

@@ -1,7 +1,10 @@
 package dev.codex.android.ui.markdown
 
 import android.graphics.Typeface
+import android.text.Spannable
+import android.text.SpannableString
 import android.text.method.LinkMovementMethod
+import android.text.style.BackgroundColorSpan
 import android.util.TypedValue
 import android.view.ViewGroup
 import androidx.appcompat.widget.AppCompatTextView
@@ -40,6 +43,8 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -91,12 +96,17 @@ fun MarkdownText(
     markdown: String,
     contentColor: Color,
     modifier: Modifier = Modifier,
+    highlightQuery: String = "",
+    activeOccurrenceIndex: Int? = null,
+    onActiveSearchTargetPositioned: ((Float) -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val textColor = contentColor.toArgb()
     val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
     val markdownSegments = remember(markdown) { splitMarkdownSegments(markdown) }
+    val inactiveHighlightColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.88f).toArgb()
+    val activeHighlightColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.34f).toArgb()
     val markwon = remember(context, textColor) {
         Markwon.builder(context)
             .usePlugin(MarkwonInlineParserPlugin.create())
@@ -126,28 +136,77 @@ fun MarkdownText(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        var consumedMatches = 0
         markdownSegments.forEach { segment ->
+            val segmentText = when (segment) {
+                is MarkdownSegment.Text -> segment.markdown
+                is MarkdownSegment.CodeBlock -> segment.code
+            }
+            val matchCount = remember(segmentText, highlightQuery) {
+                findHighlightMatches(segmentText, highlightQuery).size
+            }
+            val localActiveOccurrenceIndex = activeOccurrenceIndex
+                ?.takeIf { it in consumedMatches until (consumedMatches + matchCount) }
+                ?.minus(consumedMatches)
+
             when (segment) {
                 is MarkdownSegment.Text -> {
                     if (segment.markdown.isNotBlank()) {
-                        MarkdownTextView(
-                            markdown = segment.markdown,
-                            contentColor = contentColor,
-                            markwon = markwon,
-                            onLongPress = onLongPress,
-                        )
+                        Box(
+                            modifier = Modifier.onGloballyPositioned { coordinates ->
+                                if (
+                                    highlightQuery.isNotBlank() &&
+                                    localActiveOccurrenceIndex != null &&
+                                    onActiveSearchTargetPositioned != null
+                                ) {
+                                    onActiveSearchTargetPositioned(
+                                        coordinates.positionInRoot().y + coordinates.size.height / 2f,
+                                    )
+                                }
+                            },
+                        ) {
+                            MarkdownTextView(
+                                markdown = segment.markdown,
+                                contentColor = contentColor,
+                                markwon = markwon,
+                                highlightQuery = highlightQuery,
+                                inactiveHighlightColor = inactiveHighlightColor,
+                                activeHighlightColor = activeHighlightColor,
+                                activeOccurrenceIndex = localActiveOccurrenceIndex,
+                                onLongPress = onLongPress,
+                            )
+                        }
                     }
                 }
 
                 is MarkdownSegment.CodeBlock -> {
-                    CodeBlockCard(
-                        language = segment.language,
-                        code = segment.code,
-                        syntaxHighlighter = codeSyntaxHighlighter,
-                        onLongPress = onLongPress,
-                    )
+                    Box(
+                        modifier = Modifier.onGloballyPositioned { coordinates ->
+                            if (
+                                highlightQuery.isNotBlank() &&
+                                localActiveOccurrenceIndex != null &&
+                                onActiveSearchTargetPositioned != null
+                            ) {
+                                onActiveSearchTargetPositioned(
+                                    coordinates.positionInRoot().y + coordinates.size.height / 2f,
+                                )
+                            }
+                        },
+                    ) {
+                        CodeBlockCard(
+                            language = segment.language,
+                            code = segment.code,
+                            syntaxHighlighter = codeSyntaxHighlighter,
+                            highlightQuery = highlightQuery,
+                            inactiveHighlightColor = inactiveHighlightColor,
+                            activeHighlightColor = activeHighlightColor,
+                            activeOccurrenceIndex = localActiveOccurrenceIndex,
+                            onLongPress = onLongPress,
+                        )
+                    }
                 }
             }
+            consumedMatches += matchCount
         }
     }
 }
@@ -158,6 +217,10 @@ private fun MarkdownTextView(
     contentColor: Color,
     markwon: Markwon,
     modifier: Modifier = Modifier,
+    highlightQuery: String = "",
+    inactiveHighlightColor: Int,
+    activeHighlightColor: Int,
+    activeOccurrenceIndex: Int? = null,
     onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -185,6 +248,13 @@ private fun MarkdownTextView(
                     onLongPress != null
                 }
                 markwon.setMarkdown(this, markdown)
+                applyHighlightSpans(
+                    textView = this,
+                    query = highlightQuery,
+                    inactiveHighlightColor = inactiveHighlightColor,
+                    activeHighlightColor = activeHighlightColor,
+                    activeOccurrenceIndex = activeOccurrenceIndex,
+                )
                 tag = markdown
             }
         },
@@ -200,6 +270,13 @@ private fun MarkdownTextView(
                 markwon.setMarkdown(textView, markdown)
                 textView.tag = markdown
             }
+            applyHighlightSpans(
+                textView = textView,
+                query = highlightQuery,
+                inactiveHighlightColor = inactiveHighlightColor,
+                activeHighlightColor = activeHighlightColor,
+                activeOccurrenceIndex = activeOccurrenceIndex,
+            )
         },
     )
 }
@@ -210,6 +287,10 @@ private fun CodeBlockCard(
     language: String?,
     code: String,
     syntaxHighlighter: Prism4jSyntaxHighlight,
+    highlightQuery: String = "",
+    inactiveHighlightColor: Int,
+    activeHighlightColor: Int,
+    activeOccurrenceIndex: Int? = null,
     onLongPress: (() -> Unit)? = null,
 ) {
     val clipboard = LocalClipboardManager.current
@@ -300,6 +381,10 @@ private fun CodeBlockCard(
                     Row(modifier = Modifier.horizontalScroll(horizontalScrollState)) {
                         CodeBlockTextView(
                             highlightedCode = highlightedCode,
+                            highlightQuery = highlightQuery,
+                            inactiveHighlightColor = inactiveHighlightColor,
+                            activeHighlightColor = activeHighlightColor,
+                            activeOccurrenceIndex = activeOccurrenceIndex,
                             onLongPress = onLongPress,
                         )
                     }
@@ -314,6 +399,10 @@ private fun CodeBlockCard(
 private fun CodeBlockTextView(
     highlightedCode: CharSequence,
     modifier: Modifier = Modifier,
+    highlightQuery: String = "",
+    inactiveHighlightColor: Int,
+    activeHighlightColor: Int,
+    activeOccurrenceIndex: Int? = null,
     onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -353,8 +442,87 @@ private fun CodeBlockTextView(
             if (textView.text != highlightedCode) {
                 textView.text = highlightedCode
             }
+            applyHighlightSpans(
+                textView = textView,
+                query = highlightQuery,
+                inactiveHighlightColor = inactiveHighlightColor,
+                activeHighlightColor = activeHighlightColor,
+                activeOccurrenceIndex = activeOccurrenceIndex,
+            )
         },
     )
+}
+
+private fun applyHighlightSpans(
+    textView: AppCompatTextView,
+    query: String,
+    inactiveHighlightColor: Int,
+    activeHighlightColor: Int,
+    activeOccurrenceIndex: Int?,
+) {
+    val originalText = textView.text ?: return
+    val spannable = when (originalText) {
+        is Spannable -> SpannableString(originalText)
+        else -> SpannableString.valueOf(originalText)
+    }
+
+    spannable.getSpans(0, spannable.length, SearchHighlightSpan::class.java).forEach { span ->
+        spannable.removeSpan(span)
+    }
+
+    val matches = findHighlightMatches(
+        text = spannable.toString(),
+        query = query,
+    )
+    matches.forEachIndexed { index, match ->
+        spannable.setSpan(
+            SearchHighlightSpan(
+                backgroundColor = if (index == activeOccurrenceIndex) {
+                    activeHighlightColor
+                } else {
+                    inactiveHighlightColor
+                },
+            ),
+            match.start,
+            match.endExclusive,
+            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+    }
+
+    textView.text = spannable
+}
+
+private class SearchHighlightSpan(
+    backgroundColor: Int,
+) : BackgroundColorSpan(backgroundColor)
+
+private data class HighlightMatch(
+    val start: Int,
+    val endExclusive: Int,
+)
+
+private fun findHighlightMatches(
+    text: String,
+    query: String,
+): List<HighlightMatch> {
+    if (query.isBlank()) return emptyList()
+
+    val matches = mutableListOf<HighlightMatch>()
+    var startIndex = 0
+    while (startIndex < text.length) {
+        val matchIndex = text.indexOf(
+            string = query,
+            startIndex = startIndex,
+            ignoreCase = true,
+        )
+        if (matchIndex < 0) break
+        matches += HighlightMatch(
+            start = matchIndex,
+            endExclusive = matchIndex + query.length,
+        )
+        startIndex = matchIndex + query.length
+    }
+    return matches
 }
 
 private fun splitMarkdownSegments(markdown: String): List<MarkdownSegment> {
