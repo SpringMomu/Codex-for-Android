@@ -216,10 +216,7 @@ class ChatStreamCoordinator(
                         streamedWebSearchState = event.state
                         activityLog = when (event.state) {
                             OpenAiCompatService.WebSearchState.SEARCHING -> {
-                                activityLog + ChatActivity(
-                                    label = "search",
-                                    status = ACTIVITY_RUNNING,
-                                )
+                                incrementActivityCount(activityLog, "search")
                             }
 
                             OpenAiCompatService.WebSearchState.COMPLETED -> {
@@ -394,6 +391,31 @@ private fun markLatestStepCompleted(
     return current.mapIndexed { index, item ->
         if (index == targetIndex) {
             item.copy(status = ACTIVITY_COMPLETED)
+        } else {
+            item
+        }
+    }
+}
+
+private fun incrementActivityCount(
+    current: List<ChatActivity>,
+    label: String,
+): List<ChatActivity> {
+    val targetIndex = current.indexOfLast { it.label == label }
+    if (targetIndex == -1) {
+        return current + ChatActivity(
+            label = label,
+            status = ACTIVITY_RUNNING,
+            count = 1,
+        )
+    }
+
+    return current.mapIndexed { index, item ->
+        if (index == targetIndex) {
+            item.copy(
+                status = ACTIVITY_RUNNING,
+                count = item.count.coerceAtLeast(1) + 1,
+            )
         } else {
             item
         }

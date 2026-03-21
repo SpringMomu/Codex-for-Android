@@ -100,6 +100,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -1519,11 +1520,15 @@ private fun StreamingMessageText(
 private fun ActivityTimeline(
     activityLog: List<ChatActivity>,
 ) {
+    val displayActivityLog = remember(activityLog) {
+        compressActivityLog(activityLog)
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        activityLog.forEachIndexed { index, activity ->
+        displayActivityLog.forEachIndexed { index, activity ->
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
@@ -1556,7 +1561,7 @@ private fun ActivityTimeline(
                             }
                         }
                         Text(
-                            text = activityLabel(activity.label),
+                            text = activityLabel(activity),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontFamily = FontFamily.Monospace,
@@ -2165,7 +2170,30 @@ private fun MessageActionDialog(
 }
 
 @Composable
-private fun activityLabel(label: String): String = when (label) {
-    "search" -> stringResource(R.string.activity_search)
-    else -> label
+private fun activityLabel(activity: ChatActivity): String = when (activity.label) {
+    "search" -> pluralStringResource(
+        R.plurals.activity_search_count,
+        activity.count.coerceAtLeast(1),
+        activity.count.coerceAtLeast(1),
+    )
+    else -> activity.label
+}
+
+private fun compressActivityLog(activityLog: List<ChatActivity>): List<ChatActivity> {
+    if (activityLog.isEmpty()) return emptyList()
+
+    val compressed = mutableListOf<ChatActivity>()
+    activityLog.forEach { activity ->
+        val normalized = activity.copy(count = activity.count.coerceAtLeast(1))
+        val last = compressed.lastOrNull()
+        if (last != null && last.label == normalized.label) {
+            compressed[compressed.lastIndex] = last.copy(
+                status = normalized.status,
+                count = last.count + normalized.count,
+            )
+        } else {
+            compressed += normalized
+        }
+    }
+    return compressed
 }

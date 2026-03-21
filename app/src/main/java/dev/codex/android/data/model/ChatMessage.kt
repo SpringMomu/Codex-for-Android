@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 data class ChatActivity(
     val label: String,
     val status: String,
+    val count: Int = 1,
 )
 
 data class ChatMessage(

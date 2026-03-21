@@ -98,4 +98,8 @@
         <item quantity="one">[图片 %d 张]</item>
         <item quantity="other">[图片 %d 张]</item>
     </plurals>
+    <plurals name="activity_search_count">
+        <item quantity="one">搜索 %d 次</item>
+        <item quantity="other">搜索 %d 次</item>
+    </plurals>
 </resources>

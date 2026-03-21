@@ -98,4 +98,8 @@
         <item quantity="one">[%d image]</item>
         <item quantity="other">[%d images]</item>
     </plurals>
+    <plurals name="activity_search_count">
+        <item quantity="one">Searched %d time</item>
+        <item quantity="other">Searched %d times</item>
+    </plurals>
 </resources>
