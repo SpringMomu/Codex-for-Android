@@ -144,6 +144,7 @@ fun ChatRoute(
     onConversationCreated: (Long) -> Unit,
     onNewConversation: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenImageMode: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val viewModel: ChatViewModel = viewModel(
@@ -169,6 +170,7 @@ fun ChatRoute(
         onRemoveSelectedImage = viewModel::removeSelectedImage,
         onNewConversation = onNewConversation,
         onOpenHistory = onOpenHistory,
+        onOpenImageMode = onOpenImageMode,
         onOpenSettings = onOpenSettings,
         onUpdateMessage = viewModel::updateMessage,
         onDeleteMessage = viewModel::deleteMessage,
@@ -189,6 +191,7 @@ private fun ChatScreen(
     onRemoveSelectedImage: (String) -> Unit,
     onNewConversation: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenImageMode: () -> Unit,
     onOpenSettings: () -> Unit,
     onUpdateMessage: (Long, String) -> Unit,
     onDeleteMessage: (Long) -> Unit,
@@ -535,6 +538,7 @@ private fun ChatScreen(
                     isSearchMode = true
                 },
                 onOpenHistory = onOpenHistory,
+                onOpenImageMode = onOpenImageMode,
                 onOpenSettings = onOpenSettings,
                 onNewConversation = onNewConversation,
                 modifier = Modifier
@@ -811,6 +815,7 @@ private fun ChatHeader(
     isSearchMode: Boolean,
     onOpenSearch: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenImageMode: () -> Unit,
     onOpenSettings: () -> Unit,
     onNewConversation: () -> Unit,
     modifier: Modifier = Modifier,
@@ -842,6 +847,11 @@ private fun ChatHeader(
             contentDescription = stringResource(R.string.chat_search_open),
             onClick = onOpenSearch,
             active = isSearchMode,
+        )
+        HeaderActionButton(
+            icon = Icons.Rounded.Image,
+            contentDescription = stringResource(R.string.image_mode_title),
+            onClick = onOpenImageMode,
         )
         HeaderActionButton(
             icon = Icons.Rounded.History,

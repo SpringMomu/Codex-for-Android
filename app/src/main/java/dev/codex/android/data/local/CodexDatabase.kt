@@ -11,12 +11,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         ConversationEntity::class,
         MessageEntity::class,
+        ImageGenerationEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class CodexDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
+    abstract fun imageGenerationDao(): ImageGenerationDao
 
     companion object {
         fun create(context: Context): CodexDatabase = Room.databaseBuilder(
@@ -24,7 +26,7 @@ abstract class CodexDatabase : RoomDatabase() {
             klass = CodexDatabase::class.java,
             name = "codex-android.db",
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .build()
     }
 }
@@ -57,6 +59,25 @@ private val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL(
             "ALTER TABLE messages ADD COLUMN activityLog TEXT NOT NULL DEFAULT '[]'",
+        )
+    }
+}
+
+private val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS image_generations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                prompt TEXT NOT NULL,
+                referenceImagePath TEXT,
+                generatedImagePath TEXT,
+                status TEXT NOT NULL,
+                errorMessage TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
         )
     }
 }

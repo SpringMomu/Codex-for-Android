@@ -7,8 +7,10 @@ import dev.codex.android.data.local.AttachmentStorage
 import dev.codex.android.data.local.CodexDatabase
 import dev.codex.android.data.remote.OpenAiCompatService
 import dev.codex.android.data.repository.ConversationRepository
+import dev.codex.android.data.repository.ImageGenerationRepository
 import dev.codex.android.data.repository.SettingsRepository
 import dev.codex.android.feature.chat.ChatStreamCoordinator
+import dev.codex.android.feature.image.ImageGenerationCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,6 +47,10 @@ class AppContainer(context: Context) {
         settingsRepository = settingsRepository,
         appStrings = appStrings,
     )
+    val imageGenerationRepository = ImageGenerationRepository(
+        imageGenerationDao = database.imageGenerationDao(),
+        attachmentStorage = attachmentStorage,
+    )
     val openAiCompatService = OpenAiCompatService(
         okHttpClient = httpClient,
         appStrings = appStrings,
@@ -53,6 +59,14 @@ class AppContainer(context: Context) {
         appContext = context.applicationContext,
         applicationScope = applicationScope,
         conversationRepository = conversationRepository,
+        settingsRepository = settingsRepository,
+        openAiCompatService = openAiCompatService,
+        appStrings = appStrings,
+    )
+    val imageGenerationCoordinator = ImageGenerationCoordinator(
+        appContext = context.applicationContext,
+        applicationScope = applicationScope,
+        repository = imageGenerationRepository,
         settingsRepository = settingsRepository,
         openAiCompatService = openAiCompatService,
         appStrings = appStrings,

@@ -14,11 +14,14 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Base64
 
 class OpenAiCompatService(
@@ -104,6 +107,83 @@ class OpenAiCompatService(
         }
     }
 
+    suspend fun generateImage(
+        settings: AppSettings,
+        prompt: String,
+        referenceImagePath: String?,
+        onCallCreated: ((Call) -> Unit)? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(settings.baseUrl.isNotBlank()) { appStrings.errorFillBaseUrl(settings.languageTag) }
+            require(settings.apiKey.isNotBlank()) { appStrings.errorFillApiKey(settings.languageTag) }
+            require(prompt.isNotBlank()) { "Prompt is required." }
+
+            val request = if (referenceImagePath.isNullOrBlank()) {
+                buildImageGenerationRequest(
+                    settings = settings,
+                    prompt = prompt,
+                )
+            } else {
+                buildImageEditRequest(
+                    settings = settings,
+                    prompt = prompt,
+                    referenceImagePath = referenceImagePath,
+                )
+            }
+
+            val call = okHttpClient.newCall(request)
+            onCallCreated?.invoke(call)
+            call.execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    error(responseBody.ifBlank { appStrings.errorRequestFailedHttp(settings.languageTag, response.code) })
+                }
+                extractImageBase64(responseBody, settings.languageTag)
+            }
+        }
+    }
+
+    private fun buildImageGenerationRequest(
+        settings: AppSettings,
+        prompt: String,
+    ): Request {
+        val requestBody = ImageGenerationRequest(
+            prompt = prompt,
+        )
+        return Request.Builder()
+            .url(resolveImageEndpoint(settings.baseUrl, "images/generations"))
+            .header("Authorization", "Bearer ${settings.apiKey}")
+            .header("Content-Type", "application/json")
+            .post(json.encodeToString(ImageGenerationRequest.serializer(), requestBody).toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+    }
+
+    private fun buildImageEditRequest(
+        settings: AppSettings,
+        prompt: String,
+        referenceImagePath: String,
+    ): Request {
+        val preparedImage = ImageProcessing.prepareImageForUpload(referenceImagePath)
+            ?: error("Unable to read reference image: $referenceImagePath")
+        val imageFile = File(referenceImagePath)
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("model", IMAGE_MODEL)
+            .addFormDataPart("prompt", prompt)
+            .addFormDataPart("response_format", "b64_json")
+            .addFormDataPart(
+                "image",
+                imageFile.name.ifBlank { "reference.png" },
+                preparedImage.bytes.toRequestBody(preparedImage.mimeType.toMediaType()),
+            )
+            .build()
+        return Request.Builder()
+            .url(resolveImageEndpoint(settings.baseUrl, "images/edits"))
+            .header("Authorization", "Bearer ${settings.apiKey}")
+            .post(requestBody)
+            .build()
+    }
+
     private suspend fun executeStreamingRequest(
         settings: AppSettings,
         history: List<ChatMessage>,
@@ -114,7 +194,7 @@ class OpenAiCompatService(
         val requestBody = ResponsesRequest(
             model = settings.modelAlias,
             stream = true,
-            instructions = settings.systemPrompt.ifBlank { null },
+            instructions = settings.systemPrompt.ifBlank { DEFAULT_CHAT_INSTRUCTIONS },
             reasoning = ReasoningConfig(
                 effort = settings.reasoningEffort.ifBlank { "high" },
                 summary = "auto",
@@ -206,6 +286,48 @@ class OpenAiCompatService(
             trimmed.endsWith("/v1") -> "$trimmed/responses"
             else -> "$trimmed/v1/responses"
         }
+    }
+
+    private fun resolveImageEndpoint(baseUrl: String, imagePath: String): String {
+        var trimmed = baseUrl.trim().removeSuffix("/")
+        val suffixes = listOf("/images/generations", "/images/edits", "/responses")
+        suffixes.forEach { suffix ->
+            if (trimmed.endsWith(suffix)) {
+                trimmed = trimmed.removeSuffix(suffix)
+                return@forEach
+            }
+        }
+        val base = when {
+            trimmed.endsWith("/v1") -> trimmed
+            trimmed.endsWith("/openai/v1") -> trimmed
+            else -> "$trimmed/v1"
+        }
+        return "$base/$imagePath"
+    }
+
+    private fun extractImageBase64(
+        responseBody: String,
+        languageTag: String,
+    ): String {
+        val root = json.parseToJsonElement(responseBody).jsonObject
+        root["data"]?.jsonArray?.firstOrNull()?.jsonObject?.get("b64_json")?.jsonPrimitive?.contentOrNull?.let {
+            if (it.isNotBlank()) return it
+        }
+
+        root["output"]?.jsonArray?.forEach { item ->
+            val itemObject = item.jsonObject
+            itemObject["content"]?.jsonArray?.forEach { part ->
+                val partObject = part.jsonObject
+                partObject["b64_json"]?.jsonPrimitive?.contentOrNull?.let {
+                    if (it.isNotBlank()) return it
+                }
+                partObject["image_base64"]?.jsonPrimitive?.contentOrNull?.let {
+                    if (it.isNotBlank()) return it
+                }
+            }
+        }
+
+        error(appStrings.errorNoVisibleReply(languageTag))
     }
 
     private suspend fun parseStreamingResponse(
@@ -377,10 +499,18 @@ class OpenAiCompatService(
     private data class ResponsesRequest(
         val model: String,
         val stream: Boolean,
-        val instructions: String? = null,
+        val instructions: String,
         val reasoning: ReasoningConfig? = null,
         val tools: List<BuiltInTool> = emptyList(),
         val input: List<ResponseInputItem>,
+    )
+
+    @Serializable
+    private data class ImageGenerationRequest(
+        val model: String = IMAGE_MODEL,
+        val prompt: String,
+        @kotlinx.serialization.SerialName("response_format")
+        val responseFormat: String = "b64_json",
     )
 
     @Serializable
@@ -411,5 +541,7 @@ class OpenAiCompatService(
     private companion object {
         val WEB_SEARCH_TOOL_TYPES = listOf("web_search", "web_search_preview")
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        const val IMAGE_MODEL = "gpt-image-2"
+        const val DEFAULT_CHAT_INSTRUCTIONS = "You are a helpful assistant."
     }
 }

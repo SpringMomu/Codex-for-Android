@@ -14,6 +14,7 @@ import androidx.navigation.compose.rememberNavController
 import dev.codex.android.core.di.AppContainer
 import dev.codex.android.feature.chat.ChatRoute
 import dev.codex.android.feature.history.HistoryRoute
+import dev.codex.android.feature.image.ImageGenerationRoute
 import dev.codex.android.feature.settings.SettingsRoute
 import dev.codex.android.ui.theme.CodexTheme
 
@@ -22,6 +23,7 @@ private enum class TopLevelDestination(
 ) {
     CHAT("chat"),
     HISTORY("history"),
+    IMAGE("image"),
     SETTINGS("settings"),
 }
 
@@ -47,6 +49,7 @@ fun CodexApp(container: AppContainer) {
                             chatSessionNonce += 1
                         },
                         onOpenHistory = { navController.navigate(TopLevelDestination.HISTORY.route) },
+                        onOpenImageMode = { navController.navigate(TopLevelDestination.IMAGE.route) },
                         onOpenSettings = { navController.navigate(TopLevelDestination.SETTINGS.route) },
                     )
                 }
@@ -77,6 +80,12 @@ fun CodexApp(container: AppContainer) {
                 }
                 composable(TopLevelDestination.SETTINGS.route) {
                     SettingsRoute(
+                        container = container,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable(TopLevelDestination.IMAGE.route) {
+                    ImageGenerationRoute(
                         container = container,
                         onBack = { navController.popBackStack() },
                     )
