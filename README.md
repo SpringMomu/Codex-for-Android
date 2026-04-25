@@ -19,6 +19,9 @@ This project is intentionally different from Codex CLI:
 - Custom API key
 - Conversation history
 - Image upload
+- GPT-image-2 text-to-image generation mode
+- GPT-image-2 image-to-image generation mode with reference images
+- Image generation history with matched prompts and generated images
 - Web search support
 - Reasoning summary preview
 
@@ -26,7 +29,7 @@ This project is intentionally different from Codex CLI:
 
 Codex for Android is a mobile chat app focused on model interaction, not local development automation.
 
-If you want to talk to a Codex model on Android, keep chat history, send images, render rich responses, and use a custom compatible endpoint, this app is built for that.
+If you want to talk to a Codex model on Android, keep chat history, send images, generate images with GPT-image-2, render rich responses, and use a custom compatible endpoint, this app is built for that.
 
 If you want an agent that edits files, reads directories, or runs terminal commands, that is outside the scope of this app.
 
