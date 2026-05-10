@@ -29,7 +29,7 @@ class ImageGenerationViewModel(
     var prompt by mutableStateOf("")
         private set
 
-    var referenceImagePath by mutableStateOf<String?>(null)
+    var referenceImagePaths by mutableStateOf<List<String>>(emptyList())
         private set
 
     var isImportingReferenceImage by mutableStateOf(false)
@@ -58,24 +58,21 @@ class ImageGenerationViewModel(
         prompt = value
     }
 
-    fun importReferenceImage(uri: Uri?) {
-        if (uri == null) return
+    fun importReferenceImages(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         viewModelScope.launch {
             isImportingReferenceImage = true
-            val previousPath = referenceImagePath
-            val importedPath = container.imageGenerationRepository.importReferenceImage(uri)
-            if (importedPath != null) {
-                referenceImagePath = importedPath
-                previousPath?.let { container.imageGenerationRepository.deleteLocalAttachment(it) }
+            val importedPaths = container.imageGenerationRepository.importReferenceImages(uris)
+            if (importedPaths.isNotEmpty()) {
+                referenceImagePaths = referenceImagePaths + importedPaths
             }
             isImportingReferenceImage = false
         }
     }
 
-    fun removeReferenceImage() {
-        val path = referenceImagePath ?: return
+    fun removeReferenceImage(path: String) {
         viewModelScope.launch {
-            referenceImagePath = null
+            referenceImagePaths = referenceImagePaths - path
             container.imageGenerationRepository.deleteLocalAttachment(path)
         }
     }
@@ -83,14 +80,14 @@ class ImageGenerationViewModel(
     fun generate() {
         val trimmedPrompt = prompt.trim()
         if (trimmedPrompt.isBlank()) return
-        val currentReference = referenceImagePath
+        val currentReferences = referenceImagePaths
         viewModelScope.launch {
             container.imageGenerationCoordinator.enqueue(
                 prompt = trimmedPrompt,
-                referenceImagePath = currentReference,
+                referenceImagePaths = currentReferences,
             )
             prompt = ""
-            referenceImagePath = null
+            referenceImagePaths = emptyList()
         }
     }
 

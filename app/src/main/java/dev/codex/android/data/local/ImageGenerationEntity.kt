@@ -2,6 +2,7 @@ package dev.codex.android.data.local
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 @Entity(tableName = "image_generations")
 data class ImageGenerationEntity(
@@ -9,6 +10,7 @@ data class ImageGenerationEntity(
     val id: Long = 0,
     val prompt: String,
     val referenceImagePath: String? = null,
+    @ColumnInfo(defaultValue = "'[]'") val referenceImagePaths: String = "[]",
     val generatedImagePath: String? = null,
     val status: String,
     val errorMessage: String = "",

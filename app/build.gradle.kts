@@ -49,9 +49,25 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        localeFilters += listOf("en", "zh-rCN")
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/*.version"
+            excludes += "/META-INF/androidx/**"
+            excludes += "/META-INF/versions/**"
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a")
+            isUniversalApk = false
         }
     }
 }
@@ -83,7 +99,6 @@ dependencies {
 
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.google.material)
     implementation(libs.markwon.core)

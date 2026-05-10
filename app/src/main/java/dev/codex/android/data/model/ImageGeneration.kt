@@ -3,7 +3,7 @@ package dev.codex.android.data.model
 data class ImageGeneration(
     val id: Long,
     val prompt: String,
-    val referenceImagePath: String? = null,
+    val referenceImagePaths: List<String> = emptyList(),
     val generatedImagePath: String? = null,
     val status: ImageGenerationStatus,
     val errorMessage: String = "",

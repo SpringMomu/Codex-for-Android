@@ -16,8 +16,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -75,6 +80,8 @@ private fun SettingsScreen(
 ) {
     var baseUrl by rememberSaveable(uiState.settings.baseUrl) { mutableStateOf(uiState.settings.baseUrl) }
     var apiKey by rememberSaveable(uiState.settings.apiKey) { mutableStateOf(uiState.settings.apiKey) }
+    var imageBaseUrl by rememberSaveable(uiState.settings.imageBaseUrl) { mutableStateOf(uiState.settings.imageBaseUrl) }
+    var imageApiKey by rememberSaveable(uiState.settings.imageApiKey) { mutableStateOf(uiState.settings.imageApiKey) }
     var modelAlias by rememberSaveable(uiState.settings.modelAlias) { mutableStateOf(uiState.settings.modelAlias) }
     var languageTag by rememberSaveable(uiState.settings.languageTag) { mutableStateOf(uiState.settings.languageTag) }
     var reasoningEffort by rememberSaveable(uiState.settings.reasoningEffort) {
@@ -82,6 +89,8 @@ private fun SettingsScreen(
     }
     var systemPrompt by rememberSaveable(uiState.settings.systemPrompt) { mutableStateOf(uiState.settings.systemPrompt) }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
+    var imageKeyVisible by rememberSaveable { mutableStateOf(false) }
+    var imageSettingsExpanded by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -132,9 +141,22 @@ private fun SettingsScreen(
                 visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingAction = {
                     IconButton(onClick = { keyVisible = !keyVisible }) {
-                        Text(stringResource(if (keyVisible) R.string.hide else R.string.show))
+                        Icon(
+                            imageVector = if (keyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                            contentDescription = stringResource(if (keyVisible) R.string.hide else R.string.show),
+                        )
                     }
                 },
+            )
+            ImageEndpointSettingsField(
+                expanded = imageSettingsExpanded,
+                onExpandedChange = { imageSettingsExpanded = it },
+                imageBaseUrl = imageBaseUrl,
+                onImageBaseUrlChange = { imageBaseUrl = it },
+                imageApiKey = imageApiKey,
+                onImageApiKeyChange = { imageApiKey = it },
+                imageKeyVisible = imageKeyVisible,
+                onImageKeyVisibleChange = { imageKeyVisible = it },
             )
             SettingField(
                 title = stringResource(R.string.settings_model_alias),
@@ -176,6 +198,8 @@ private fun SettingsScreen(
                         AppSettings(
                             baseUrl = baseUrl,
                             apiKey = apiKey,
+                            imageBaseUrl = imageBaseUrl,
+                            imageApiKey = imageApiKey,
                             modelAlias = modelAlias,
                             reasoningEffort = reasoningEffortValue(reasoningEffort),
                             systemPrompt = systemPrompt,
@@ -190,6 +214,80 @@ private fun SettingsScreen(
                 enabled = !uiState.isSaving,
             ) {
                 Text(stringResource(if (uiState.isSaving) R.string.settings_saving else R.string.settings_save))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageEndpointSettingsField(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    imageBaseUrl: String,
+    onImageBaseUrlChange: (String) -> Unit,
+    imageApiKey: String,
+    onImageApiKeyChange: (String) -> Unit,
+    imageKeyVisible: Boolean,
+    onImageKeyVisibleChange: (Boolean) -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onExpandedChange(!expanded) },
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.Image, contentDescription = null)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_image_endpoint),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_image_endpoint_hint),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                )
+            }
+            if (expanded) {
+                OutlinedTextField(
+                    value = imageBaseUrl,
+                    onValueChange = onImageBaseUrlChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("https://api.openai.com") },
+                    leadingIcon = { Icon(imageVector = Icons.Rounded.Cloud, contentDescription = null) },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = imageApiKey,
+                    onValueChange = onImageApiKeyChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("sk-") },
+                    visualTransformation = if (imageKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    leadingIcon = { Icon(imageVector = Icons.Rounded.Key, contentDescription = null) },
+                    trailingIcon = {
+                        IconButton(onClick = { onImageKeyVisibleChange(!imageKeyVisible) }) {
+                            Icon(
+                                imageVector = if (imageKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                contentDescription = stringResource(if (imageKeyVisible) R.string.hide else R.string.show),
+                            )
+                        }
+                    },
+                    singleLine = true,
+                )
             }
         }
     }

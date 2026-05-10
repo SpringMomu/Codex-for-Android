@@ -1,12 +1,11 @@
 package dev.codex.android.core.i18n
 
 import android.content.Context
-import android.content.res.Configuration
 import dev.codex.android.R
-import java.util.Locale
 
 class AppStrings(
     private val context: Context,
+    private val localeManager: AppLocaleManager = AppLocaleManager(),
 ) {
     fun defaultConversationTitle(languageTag: String): String = localizedContext(languageTag)
         .getString(R.string.conversation_title_new)
@@ -55,13 +54,6 @@ class AppStrings(
         .getString(R.string.error_request_failed_unknown)
 
     private fun localizedContext(languageTag: String): Context {
-        val language = AppLanguage.fromStorage(languageTag)
-        val localeTag = language.localeTag ?: return context
-        val locale = Locale.forLanguageTag(localeTag)
-        val configuration = Configuration(context.resources.configuration).apply {
-            setLocale(locale)
-            setLayoutDirection(locale)
-        }
-        return context.createConfigurationContext(configuration)
+        return localeManager.localizedContext(context, languageTag)
     }
 }

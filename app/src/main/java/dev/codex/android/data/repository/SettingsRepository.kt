@@ -23,6 +23,8 @@ class SettingsRepository(
     private object Keys {
         val baseUrl = stringPreferencesKey("base_url")
         val apiKey = stringPreferencesKey("api_key")
+        val imageBaseUrl = stringPreferencesKey("image_base_url")
+        val imageApiKey = stringPreferencesKey("image_api_key")
         val modelAlias = stringPreferencesKey("model_alias")
         val reasoningEffort = stringPreferencesKey("reasoning_effort")
         val systemPrompt = stringPreferencesKey("system_prompt")
@@ -35,6 +37,8 @@ class SettingsRepository(
         AppSettings(
             baseUrl = preferences[Keys.baseUrl] ?: AppSettings().baseUrl,
             apiKey = preferences[Keys.apiKey] ?: "",
+            imageBaseUrl = preferences[Keys.imageBaseUrl] ?: "",
+            imageApiKey = preferences[Keys.imageApiKey] ?: "",
             modelAlias = preferences[Keys.modelAlias] ?: AppSettings().modelAlias,
             reasoningEffort = preferences[Keys.reasoningEffort] ?: AppSettings().reasoningEffort,
             systemPrompt = preferences[Keys.systemPrompt] ?: "",
@@ -50,6 +54,8 @@ class SettingsRepository(
         context.appSettingsDataStore.edit { preferences ->
             preferences[Keys.baseUrl] = settings.baseUrl.trim()
             preferences[Keys.apiKey] = settings.apiKey.trim()
+            preferences[Keys.imageBaseUrl] = settings.imageBaseUrl.trim()
+            preferences[Keys.imageApiKey] = settings.imageApiKey.trim()
             preferences[Keys.modelAlias] = settings.modelAlias.trim()
             preferences[Keys.reasoningEffort] = settings.reasoningEffort.trim()
             preferences[Keys.systemPrompt] = settings.systemPrompt.trim()

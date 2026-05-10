@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -101,10 +102,10 @@ fun ImageGenerationRoute(
     ImageGenerationScreen(
         uiState = uiState,
         prompt = viewModel.prompt,
-        referenceImagePath = viewModel.referenceImagePath,
+        referenceImagePaths = viewModel.referenceImagePaths,
         isImportingReferenceImage = viewModel.isImportingReferenceImage,
         onPromptChange = viewModel::updatePrompt,
-        onReferenceSelected = viewModel::importReferenceImage,
+        onReferencesSelected = viewModel::importReferenceImages,
         onRemoveReference = viewModel::removeReferenceImage,
         onGenerate = viewModel::generate,
         onRetry = viewModel::retry,
@@ -119,11 +120,11 @@ fun ImageGenerationRoute(
 private fun ImageGenerationScreen(
     uiState: ImageGenerationUiState,
     prompt: String,
-    referenceImagePath: String?,
+    referenceImagePaths: List<String>,
     isImportingReferenceImage: Boolean,
     onPromptChange: (String) -> Unit,
-    onReferenceSelected: (Uri?) -> Unit,
-    onRemoveReference: () -> Unit,
+    onReferencesSelected: (List<Uri>) -> Unit,
+    onRemoveReference: (String) -> Unit,
     onGenerate: () -> Unit,
     onRetry: (Long) -> Unit,
     onStop: (Long) -> Unit,
@@ -132,8 +133,8 @@ private fun ImageGenerationScreen(
     onBack: () -> Unit,
 ) {
     val imagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-        onResult = onReferenceSelected,
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10),
+        onResult = onReferencesSelected,
     )
 
     Scaffold(
@@ -150,7 +151,7 @@ private fun ImageGenerationScreen(
             ImageHeader(onBack = onBack)
             ImageComposer(
                 prompt = prompt,
-                referenceImagePath = referenceImagePath,
+                referenceImagePaths = referenceImagePaths,
                 isImportingReferenceImage = isImportingReferenceImage,
                 canGenerate = prompt.isNotBlank() && uiState.hasCredentials,
                 onPromptChange = onPromptChange,
@@ -219,12 +220,12 @@ private fun ImageHeader(onBack: () -> Unit) {
 @Composable
 private fun ImageComposer(
     prompt: String,
-    referenceImagePath: String?,
+    referenceImagePaths: List<String>,
     isImportingReferenceImage: Boolean,
     canGenerate: Boolean,
     onPromptChange: (String) -> Unit,
     onPickReference: () -> Unit,
-    onRemoveReference: () -> Unit,
+    onRemoveReference: (String) -> Unit,
     onGenerate: () -> Unit,
 ) {
     Card(
@@ -258,27 +259,34 @@ private fun ImageComposer(
                     )
                 }
             }
-            referenceImagePath?.let { path ->
-                Box(modifier = Modifier.size(96.dp)) {
-                    LocalImageThumbnail(
-                        path = path,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(5.dp)
-                            .size(24.dp)
-                            .clickable { onRemoveReference() },
-                        color = Color.Black.copy(alpha = 0.7f),
-                        shape = CircleShape,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.remove_image),
-                            tint = Color.White,
-                            modifier = Modifier.padding(5.dp),
-                        )
+            if (referenceImagePaths.isNotEmpty()) {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(referenceImagePaths, key = { it }) { path ->
+                        Box(modifier = Modifier.size(96.dp)) {
+                            LocalImageThumbnail(
+                                path = path,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(5.dp)
+                                    .size(24.dp)
+                                    .clickable { onRemoveReference(path) },
+                                color = Color.Black.copy(alpha = 0.7f),
+                                shape = CircleShape,
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.remove_image),
+                                    tint = Color.White,
+                                    modifier = Modifier.padding(5.dp),
+                                )
+                            }
+                        }
                     }
                 }
                 Text(
@@ -343,20 +351,27 @@ private fun ImageGenerationCard(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                generation.referenceImagePath?.let { path ->
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(
-                            text = stringResource(R.string.image_reference_label),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        LocalImageThumbnail(
-                            path = path,
-                            modifier = Modifier.size(82.dp),
-                        )
+            if (generation.referenceImagePaths.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(
+                        text = stringResource(R.string.image_reference_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(generation.referenceImagePaths, key = { it }) { path ->
+                            LocalImageThumbnail(
+                                path = path,
+                                modifier = Modifier.size(82.dp),
+                            )
+                        }
                     }
                 }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 generation.generatedImagePath?.let { path ->
                     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(

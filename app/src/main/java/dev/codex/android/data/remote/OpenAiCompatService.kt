@@ -110,24 +110,25 @@ class OpenAiCompatService(
     suspend fun generateImage(
         settings: AppSettings,
         prompt: String,
-        referenceImagePath: String?,
+        referenceImagePaths: List<String>,
         onCallCreated: ((Call) -> Unit)? = null,
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            require(settings.baseUrl.isNotBlank()) { appStrings.errorFillBaseUrl(settings.languageTag) }
-            require(settings.apiKey.isNotBlank()) { appStrings.errorFillApiKey(settings.languageTag) }
+            val imageSettings = settings.forImageGeneration()
+            require(imageSettings.baseUrl.isNotBlank()) { appStrings.errorFillBaseUrl(settings.languageTag) }
+            require(imageSettings.apiKey.isNotBlank()) { appStrings.errorFillApiKey(settings.languageTag) }
             require(prompt.isNotBlank()) { "Prompt is required." }
 
-            val request = if (referenceImagePath.isNullOrBlank()) {
+            val request = if (referenceImagePaths.isEmpty()) {
                 buildImageGenerationRequest(
-                    settings = settings,
+                    settings = imageSettings,
                     prompt = prompt,
                 )
             } else {
                 buildImageEditRequest(
-                    settings = settings,
+                    settings = imageSettings,
                     prompt = prompt,
-                    referenceImagePath = referenceImagePath,
+                    referenceImagePaths = referenceImagePaths,
                 )
             }
 
@@ -161,22 +162,27 @@ class OpenAiCompatService(
     private fun buildImageEditRequest(
         settings: AppSettings,
         prompt: String,
-        referenceImagePath: String,
+        referenceImagePaths: List<String>,
     ): Request {
-        val preparedImage = ImageProcessing.prepareImageForUpload(referenceImagePath)
-            ?: error("Unable to read reference image: $referenceImagePath")
-        val imageFile = File(referenceImagePath)
-        val requestBody = MultipartBody.Builder()
+        require(referenceImagePaths.isNotEmpty()) { "Reference image is required." }
+        val multipartBuilder = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("model", IMAGE_MODEL)
             .addFormDataPart("prompt", prompt)
             .addFormDataPart("response_format", "b64_json")
-            .addFormDataPart(
-                "image",
+
+        referenceImagePaths.forEach { referenceImagePath ->
+            val preparedImage = ImageProcessing.prepareImageForUpload(referenceImagePath)
+                ?: error("Unable to read reference image: $referenceImagePath")
+            val imageFile = File(referenceImagePath)
+            multipartBuilder.addFormDataPart(
+                if (referenceImagePaths.size == 1) "image" else "image[]",
                 imageFile.name.ifBlank { "reference.png" },
                 preparedImage.bytes.toRequestBody(preparedImage.mimeType.toMediaType()),
             )
-            .build()
+        }
+
+        val requestBody = multipartBuilder.build()
         return Request.Builder()
             .url(resolveImageEndpoint(settings.baseUrl, "images/edits"))
             .header("Authorization", "Bearer ${settings.apiKey}")
@@ -494,6 +500,11 @@ class OpenAiCompatService(
         val base64 = Base64.getEncoder().encodeToString(preparedImage.bytes)
         return "data:${preparedImage.mimeType};base64,$base64"
     }
+
+    private fun AppSettings.forImageGeneration(): AppSettings = copy(
+        baseUrl = imageBaseUrl.ifBlank { baseUrl },
+        apiKey = imageApiKey.ifBlank { apiKey },
+    )
 
     @Serializable
     private data class ResponsesRequest(

@@ -45,11 +45,11 @@ class ImageGenerationCoordinator(
 
     suspend fun enqueue(
         prompt: String,
-        referenceImagePath: String?,
+        referenceImagePaths: List<String>,
     ): Long = mutex.withLock {
         val id = repository.createGeneration(
             prompt = prompt,
-            referenceImagePath = referenceImagePath,
+            referenceImagePaths = referenceImagePaths,
         )
         repository.getGeneration(id)?.let(::startGeneration)
         id
@@ -92,7 +92,7 @@ class ImageGenerationCoordinator(
         val result = openAiCompatService.generateImage(
             settings = settings,
             prompt = generation.prompt,
-            referenceImagePath = generation.referenceImagePath,
+            referenceImagePaths = generation.referenceImagePaths,
             onCallCreated = { call -> calls[generation.id] = call },
         )
         result.fold(

@@ -8,26 +8,31 @@ import dev.codex.android.data.model.ImageGeneration
 import dev.codex.android.data.model.ImageGenerationStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class ImageGenerationRepository(
     private val imageGenerationDao: ImageGenerationDao,
     private val attachmentStorage: AttachmentStorage,
 ) {
+    private val json = Json
+
     fun observeGenerations(): Flow<List<ImageGeneration>> = imageGenerationDao.observeGenerations().map { items ->
         items.map(::toModel)
     }
 
-    suspend fun importReferenceImage(uri: Uri): String? = attachmentStorage.importImages(listOf(uri)).firstOrNull()
+    suspend fun importReferenceImages(uris: List<Uri>): List<String> = attachmentStorage.importImages(uris)
 
     suspend fun createGeneration(
         prompt: String,
-        referenceImagePath: String?,
+        referenceImagePaths: List<String>,
     ): Long {
         val now = System.currentTimeMillis()
         return imageGenerationDao.insertGeneration(
             ImageGenerationEntity(
                 prompt = prompt,
-                referenceImagePath = referenceImagePath,
+                referenceImagePath = referenceImagePaths.firstOrNull(),
+                referenceImagePaths = encodeReferenceImagePaths(referenceImagePaths),
                 status = ImageGenerationStatus.QUEUED.toStorage(),
                 createdAt = now,
                 updatedAt = now,
@@ -90,7 +95,7 @@ class ImageGenerationRepository(
         val generation = imageGenerationDao.getGeneration(id) ?: return
         imageGenerationDao.deleteGeneration(id)
         attachmentStorage.deleteAttachments(
-            listOfNotNull(generation.referenceImagePath, generation.generatedImagePath),
+            decodeReferenceImagePaths(generation).plus(listOfNotNull(generation.generatedImagePath)),
         )
     }
 
@@ -120,11 +125,20 @@ class ImageGenerationRepository(
     private fun toModel(entity: ImageGenerationEntity): ImageGeneration = ImageGeneration(
         id = entity.id,
         prompt = entity.prompt,
-        referenceImagePath = entity.referenceImagePath,
+        referenceImagePaths = decodeReferenceImagePaths(entity),
         generatedImagePath = entity.generatedImagePath,
         status = ImageGenerationStatus.fromStorage(entity.status),
         errorMessage = entity.errorMessage,
         createdAt = entity.createdAt,
         updatedAt = entity.updatedAt,
     )
+
+    private fun encodeReferenceImagePaths(paths: List<String>): String = json.encodeToString(paths)
+
+    private fun decodeReferenceImagePaths(entity: ImageGenerationEntity): List<String> {
+        val decoded = runCatching {
+            json.decodeFromString<List<String>>(entity.referenceImagePaths)
+        }.getOrElse { emptyList() }
+        return (decoded + listOfNotNull(entity.referenceImagePath)).distinct()
+    }
 }

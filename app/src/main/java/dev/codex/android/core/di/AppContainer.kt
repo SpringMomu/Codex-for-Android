@@ -15,24 +15,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
 
 class AppContainer(context: Context) {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val appLocaleManager = AppLocaleManager()
-    val appStrings = AppStrings(context)
-
-    private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BASIC
-    }
+    val appStrings = AppStrings(context, appLocaleManager)
 
     private val httpClient = OkHttpClient.Builder()
         .callTimeout(0, TimeUnit.MILLISECONDS)
         .connectTimeout(0, TimeUnit.MILLISECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .writeTimeout(0, TimeUnit.MILLISECONDS)
-        .addInterceptor(loggingInterceptor)
         .build()
 
     private val database = CodexDatabase.create(context)
