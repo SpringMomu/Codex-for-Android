@@ -32,7 +32,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Refresh
@@ -61,9 +63,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,6 +80,7 @@ import dev.codex.android.data.model.ImageGeneration
 import dev.codex.android.data.model.ImageGenerationStatus
 import dev.codex.android.ui.format.formatTimestamp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -341,7 +346,23 @@ private fun ImageGenerationCard(
     onDelete: () -> Unit,
     onSave: (String) -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
     var previewPath by remember { mutableStateOf<String?>(null) }
+    var promptCopied by remember(generation.prompt) { mutableStateOf(false) }
+    val copyPrompt = remember(clipboard, generation.prompt) {
+        {
+            clipboard.setText(AnnotatedString(generation.prompt))
+            promptCopied = true
+        }
+    }
+
+    LaunchedEffect(promptCopied) {
+        if (promptCopied) {
+            delay(1_200)
+            promptCopied = false
+        }
+    }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.82f)),
@@ -388,12 +409,30 @@ private fun ImageGenerationCard(
                     }
                 }
             }
-            Text(
-                text = generation.prompt,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 6,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = generation.prompt,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                IconButton(
+                    onClick = copyPrompt,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector = if (promptCopied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                        contentDescription = stringResource(
+                            if (promptCopied) R.string.image_prompt_copied else R.string.image_copy_prompt,
+                        ),
+                    )
+                }
+            }
             if (generation.errorMessage.isNotBlank()) {
                 Text(
                     text = generation.errorMessage,

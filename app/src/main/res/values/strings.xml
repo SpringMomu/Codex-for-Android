@@ -57,6 +57,8 @@
     <string name="image_status_failed">Failed</string>
     <string name="image_saved_to_gallery">Saved to gallery</string>
     <string name="image_save_failed">Save failed</string>
+    <string name="image_copy_prompt">Copy prompt</string>
+    <string name="image_prompt_copied">Prompt copied</string>
     <string name="chat_input_placeholder">Send a message</string>
     <string name="model_not_configured">No model configured</string>
     <string name="open_history">History</string>

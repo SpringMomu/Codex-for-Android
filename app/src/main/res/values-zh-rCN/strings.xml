@@ -57,6 +57,8 @@
     <string name="image_status_failed">失败</string>
     <string name="image_saved_to_gallery">已保存到相册</string>
     <string name="image_save_failed">保存失败</string>
+    <string name="image_copy_prompt">复制 prompt</string>
+    <string name="image_prompt_copied">已复制 prompt</string>
     <string name="chat_input_placeholder">发送消息</string>
     <string name="model_not_configured">未设置模型</string>
     <string name="open_history">历史记录</string>
