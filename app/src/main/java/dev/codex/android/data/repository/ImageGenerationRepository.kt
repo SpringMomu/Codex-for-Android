@@ -45,11 +45,14 @@ class ImageGenerationRepository(
     suspend fun getPendingGenerations(): List<ImageGeneration> = imageGenerationDao.getPendingGenerations().map(::toModel)
 
     suspend fun markRunning(id: Long) {
+        val now = System.currentTimeMillis()
         updateStatus(
             id = id,
             status = ImageGenerationStatus.RUNNING,
             generatedImagePath = null,
             errorMessage = "",
+            startedAt = now,
+            clearCompletedAt = true,
         )
     }
 
@@ -63,6 +66,7 @@ class ImageGenerationRepository(
             status = ImageGenerationStatus.SUCCEEDED,
             generatedImagePath = imagePath,
             errorMessage = "",
+            completedAt = System.currentTimeMillis(),
         )
     }
 
@@ -75,6 +79,7 @@ class ImageGenerationRepository(
             status = ImageGenerationStatus.FAILED,
             generatedImagePath = null,
             errorMessage = errorMessage,
+            completedAt = System.currentTimeMillis(),
         )
     }
 
@@ -86,6 +91,8 @@ class ImageGenerationRepository(
                 errorMessage = "",
                 generatedImagePath = null,
                 updatedAt = System.currentTimeMillis(),
+                startedAt = null,
+                completedAt = null,
             ),
         )
         return true
@@ -110,6 +117,9 @@ class ImageGenerationRepository(
         status: ImageGenerationStatus,
         generatedImagePath: String?,
         errorMessage: String,
+        startedAt: Long? = null,
+        completedAt: Long? = null,
+        clearCompletedAt: Boolean = false,
     ) {
         val generation = imageGenerationDao.getGeneration(id) ?: return
         imageGenerationDao.updateGeneration(
@@ -118,6 +128,8 @@ class ImageGenerationRepository(
                 generatedImagePath = generatedImagePath,
                 errorMessage = errorMessage,
                 updatedAt = System.currentTimeMillis(),
+                startedAt = startedAt ?: generation.startedAt,
+                completedAt = if (clearCompletedAt) null else completedAt ?: generation.completedAt,
             ),
         )
     }
@@ -131,6 +143,8 @@ class ImageGenerationRepository(
         errorMessage = entity.errorMessage,
         createdAt = entity.createdAt,
         updatedAt = entity.updatedAt,
+        startedAt = entity.startedAt,
+        completedAt = entity.completedAt,
     )
 
     private fun encodeReferenceImagePaths(paths: List<String>): String = json.encodeToString(paths)

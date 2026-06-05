@@ -78,6 +78,7 @@ import dev.codex.android.core.di.AppContainer
 import dev.codex.android.core.media.ImageProcessing
 import dev.codex.android.data.model.ImageGeneration
 import dev.codex.android.data.model.ImageGenerationStatus
+import dev.codex.android.ui.format.formatElapsedDuration
 import dev.codex.android.ui.format.formatTimestamp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -349,17 +350,36 @@ private fun ImageGenerationCard(
     val clipboard = LocalClipboardManager.current
     var previewPath by remember { mutableStateOf<String?>(null) }
     var promptCopied by remember(generation.prompt) { mutableStateOf(false) }
+    var nowMillis by remember(generation.id, generation.startedAt, generation.completedAt) {
+        mutableStateOf(System.currentTimeMillis())
+    }
     val copyPrompt = remember(clipboard, generation.prompt) {
         {
             clipboard.setText(AnnotatedString(generation.prompt))
             promptCopied = true
         }
     }
+    val elapsedTimeText = generation.elapsedMillis(
+        isActive = isActive,
+        nowMillis = nowMillis,
+    )?.let { elapsedMillis ->
+        stringResource(R.string.image_elapsed_time, formatElapsedDuration(elapsedMillis))
+    }
+    val statusAndElapsedText = listOfNotNull(
+        statusText(generation.status, isActive),
+        elapsedTimeText,
+    ).joinToString(" - ")
 
     LaunchedEffect(promptCopied) {
         if (promptCopied) {
             delay(1_200)
             promptCopied = false
+        }
+    }
+    LaunchedEffect(isActive, generation.startedAt, generation.completedAt) {
+        while (isActive && generation.startedAt != null && generation.completedAt == null) {
+            nowMillis = System.currentTimeMillis()
+            delay(1_000)
         }
     }
 
@@ -446,7 +466,7 @@ private fun ImageGenerationCard(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = statusText(generation.status, isActive),
+                    text = statusAndElapsedText,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -542,4 +562,13 @@ private fun statusText(
     status == ImageGenerationStatus.SUCCEEDED -> stringResource(R.string.image_status_succeeded)
     status == ImageGenerationStatus.FAILED -> stringResource(R.string.image_status_failed)
     else -> status.name
+}
+
+private fun ImageGeneration.elapsedMillis(
+    isActive: Boolean,
+    nowMillis: Long,
+): Long? {
+    val start = startedAt ?: return null
+    val end = completedAt ?: if (isActive) nowMillis else return null
+    return (end - start).coerceAtLeast(0L)
 }

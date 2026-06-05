@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageEntity::class,
         ImageGenerationEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class CodexDatabase : RoomDatabase() {
@@ -33,6 +33,7 @@ abstract class CodexDatabase : RoomDatabase() {
                 MIGRATION_4_5,
                 MIGRATION_5_6,
                 MIGRATION_6_7,
+                MIGRATION_7_8,
             )
             .build()
     }
@@ -93,6 +94,17 @@ private val MIGRATION_6_7 = object : Migration(6, 7) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL(
             "ALTER TABLE image_generations ADD COLUMN referenceImagePaths TEXT NOT NULL DEFAULT '[]'",
+        )
+    }
+}
+
+private val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL(
+            "ALTER TABLE image_generations ADD COLUMN startedAt INTEGER DEFAULT NULL",
+        )
+        database.execSQL(
+            "ALTER TABLE image_generations ADD COLUMN completedAt INTEGER DEFAULT NULL",
         )
     }
 }

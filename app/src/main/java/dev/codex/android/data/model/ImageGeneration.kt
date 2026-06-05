@@ -9,6 +9,8 @@ data class ImageGeneration(
     val errorMessage: String = "",
     val createdAt: Long,
     val updatedAt: Long,
+    val startedAt: Long? = null,
+    val completedAt: Long? = null,
 )
 
 enum class ImageGenerationStatus {

@@ -16,4 +16,6 @@ data class ImageGenerationEntity(
     val errorMessage: String = "",
     val createdAt: Long,
     val updatedAt: Long,
+    @ColumnInfo(defaultValue = "NULL") val startedAt: Long? = null,
+    @ColumnInfo(defaultValue = "NULL") val completedAt: Long? = null,
 )

@@ -55,6 +55,7 @@
     <string name="image_status_running">Generating</string>
     <string name="image_status_succeeded">Completed</string>
     <string name="image_status_failed">Failed</string>
+    <string name="image_elapsed_time">Time %1$s</string>
     <string name="image_saved_to_gallery">Saved to gallery</string>
     <string name="image_save_failed">Save failed</string>
     <string name="image_copy_prompt">Copy prompt</string>

@@ -55,6 +55,7 @@
     <string name="image_status_running">生成中</string>
     <string name="image_status_succeeded">已完成</string>
     <string name="image_status_failed">失败</string>
+    <string name="image_elapsed_time">用时 %1$s</string>
     <string name="image_saved_to_gallery">已保存到相册</string>
     <string name="image_save_failed">保存失败</string>
     <string name="image_copy_prompt">复制 prompt</string>
