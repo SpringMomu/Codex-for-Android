@@ -11,6 +11,7 @@ import dev.codex.android.data.repository.ConversationRepository
 import dev.codex.android.data.repository.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.Call
+import java.util.concurrent.ConcurrentHashMap
 
 data class ActiveChatStream(
     val conversationId: Long,
@@ -40,23 +42,22 @@ class ChatStreamCoordinator(
     private val appStrings: AppStrings,
 ) {
     private val requestMutex = Mutex()
-    private val activeStream = MutableStateFlow<ActiveChatStream?>(null)
-    @Volatile
-    private var activeStreamJob: Job? = null
-    @Volatile
-    private var activeStreamCall: Call? = null
-    @Volatile
-    private var stoppedAssistantMessageId: Long? = null
+    private val activeStreams = MutableStateFlow<Map<Long, ActiveChatStream>>(emptyMap())
+    private val activeStreamJobs = ConcurrentHashMap<Long, Job>()
+    private val activeStreamCalls = ConcurrentHashMap<Long, Call>()
+    private val stoppedAssistantMessageIds = ConcurrentHashMap.newKeySet<Long>()
 
-    val activeStreamState: StateFlow<ActiveChatStream?> = activeStream.asStateFlow()
+    val activeStreamsState: StateFlow<Map<Long, ActiveChatStream>> = activeStreams.asStateFlow()
+
+    fun isConversationStreaming(conversationId: Long?): Boolean {
+        return conversationId != null && activeStreams.value.containsKey(conversationId)
+    }
 
     suspend fun sendMessage(
         activeConversationId: Long?,
         prompt: String,
         imagePaths: List<String>,
     ): SendMessageResult? = requestMutex.withLock {
-        if (activeStream.value != null) return null
-
         var createdConversationId: Long? = null
         val existingConversationId = activeConversationId?.takeIf {
             conversationRepository.conversationExists(it)
@@ -67,6 +68,7 @@ class ChatStreamCoordinator(
         ).also { createdId ->
             createdConversationId = createdId
         }
+        if (activeStreams.value.containsKey(conversationId)) return null
 
         conversationRepository.addMessage(
             conversationId = conversationId,
@@ -98,10 +100,10 @@ class ChatStreamCoordinator(
     }
 
     suspend fun retryFailedMessage(messageId: Long): Boolean = requestMutex.withLock {
-        if (activeStream.value != null) return false
-
         val targetMessage = conversationRepository.getMessage(messageId) ?: return false
         val conversationId = targetMessage.conversationId ?: return false
+        if (activeStreams.value.containsKey(conversationId)) return false
+
         val history = conversationRepository.getMessages(conversationId)
         val targetIndex = history.indexOfFirst { it.id == messageId }
         if (targetIndex == -1) return false
@@ -131,8 +133,59 @@ class ChatStreamCoordinator(
         true
     }
 
+    suspend fun generateReplyFromMessage(messageId: Long): Boolean = requestMutex.withLock {
+        val targetMessage = conversationRepository.getMessage(messageId) ?: return false
+        val conversationId = targetMessage.conversationId ?: return false
+        if (activeStreams.value.containsKey(conversationId)) return false
+
+        val history = conversationRepository.getMessages(conversationId)
+        val targetIndex = history.indexOfFirst { it.id == messageId }
+        if (targetIndex == -1) return false
+
+        val historyForReply = when (history[targetIndex].role) {
+            MessageRole.USER -> history.take(targetIndex + 1)
+            MessageRole.ASSISTANT -> history.take(targetIndex)
+            MessageRole.SYSTEM -> return false
+        }
+        if (historyForReply.none { it.role == MessageRole.USER }) return false
+
+        val messagesToDelete = when (history[targetIndex].role) {
+            MessageRole.USER -> history.drop(targetIndex + 1)
+            MessageRole.ASSISTANT -> history.drop(targetIndex)
+            MessageRole.SYSTEM -> emptyList()
+        }
+        if (messagesToDelete.isNotEmpty()) {
+            conversationRepository.deleteMessages(
+                conversationId = conversationId,
+                messages = messagesToDelete,
+            )
+        }
+
+        val assistantMessageId = conversationRepository.addMessage(
+            conversationId = conversationId,
+            role = MessageRole.ASSISTANT,
+            content = "",
+            reasoningSummary = "",
+            activityLog = emptyList(),
+            webSearchState = "",
+        )
+
+        startStream(
+            conversationId = conversationId,
+            assistantMessageId = assistantMessageId,
+            history = historyForReply,
+        )
+        true
+    }
+
     fun stopActiveStream() {
-        stopActiveStreamInternal()
+        activeStreams.value.keys.forEach { conversationId ->
+            stopActiveStreamInternal(conversationId)
+        }
+    }
+
+    fun stopActiveStream(conversationId: Long?) {
+        stopActiveStreamInternal(conversationId)
     }
 
     private fun startStream(
@@ -140,38 +193,47 @@ class ChatStreamCoordinator(
         assistantMessageId: Long,
         history: List<ChatMessage>,
     ) {
-        stoppedAssistantMessageId = null
-        activeStream.value = ActiveChatStream(
-            conversationId = conversationId,
-            assistantMessageId = assistantMessageId,
-        )
+        stoppedAssistantMessageIds.remove(assistantMessageId)
+        activeStreams.update { current ->
+            current + (conversationId to ActiveChatStream(
+                conversationId = conversationId,
+                assistantMessageId = assistantMessageId,
+            ))
+        }
         runCatching {
             StreamingForegroundService.start(appContext)
         }
-        activeStreamJob = applicationScope.launch {
+        val streamJob = applicationScope.launch(start = CoroutineStart.LAZY) {
             try {
                 streamAssistantReply(
+                    conversationId = conversationId,
                     history = history,
                     assistantMessageId = assistantMessageId,
                 )
             } finally {
-                runCatching {
-                    StreamingForegroundService.stop(appContext)
-                }
-                activeStreamCall = null
-                activeStreamJob = null
-                activeStream.update { current ->
-                    if (current?.assistantMessageId == assistantMessageId) {
-                        null
+                activeStreamCalls.remove(conversationId)
+                activeStreamJobs.remove(conversationId)
+                stoppedAssistantMessageIds.remove(assistantMessageId)
+                activeStreams.update { current ->
+                    if (current[conversationId]?.assistantMessageId == assistantMessageId) {
+                        current - conversationId
                     } else {
                         current
                     }
                 }
+                if (activeStreams.value.isEmpty()) {
+                    runCatching {
+                        StreamingForegroundService.stop(appContext)
+                    }
+                }
             }
         }
+        activeStreamJobs[conversationId] = streamJob
+        streamJob.start()
     }
 
     private suspend fun streamAssistantReply(
+        conversationId: Long,
         history: List<ChatMessage>,
         assistantMessageId: Long,
     ) {
@@ -235,7 +297,12 @@ class ChatStreamCoordinator(
                     }
                 }
             },
-            onCallCreated = { call -> activeStreamCall = call },
+            onCallCreated = { call ->
+                activeStreamCalls[conversationId] = call
+                if (stoppedAssistantMessageIds.contains(assistantMessageId)) {
+                    call.cancel()
+                }
+            },
         )
 
         result.fold(
@@ -296,7 +363,7 @@ class ChatStreamCoordinator(
         assistantMessageId: Long,
         throwable: Throwable,
     ): Boolean {
-        val stoppedThisMessage = stoppedAssistantMessageId == assistantMessageId
+        val stoppedThisMessage = stoppedAssistantMessageIds.contains(assistantMessageId)
         val canceled = throwable is CancellationException ||
             throwable.message?.contains("Canceled", ignoreCase = true) == true ||
             throwable.message?.contains("Socket closed", ignoreCase = true) == true ||
@@ -308,7 +375,7 @@ class ChatStreamCoordinator(
         assistantMessageId: Long,
         throwable: Throwable,
     ): Boolean {
-        if (stoppedAssistantMessageId == assistantMessageId) return false
+        if (stoppedAssistantMessageIds.contains(assistantMessageId)) return false
         val message = throwable.message.orEmpty()
         return message.contains("Software caused connection abort", ignoreCase = true) ||
             message.contains("Connection reset", ignoreCase = true) ||
@@ -373,11 +440,12 @@ class ChatStreamCoordinator(
         return existing + incoming.drop(overlap)
     }
 
-    private fun stopActiveStreamInternal() {
-        val current = activeStream.value ?: return
-        stoppedAssistantMessageId = current.assistantMessageId
-        activeStreamCall?.cancel()
-        activeStreamJob?.cancel()
+    private fun stopActiveStreamInternal(conversationId: Long?) {
+        if (conversationId == null) return
+        val current = activeStreams.value[conversationId] ?: return
+        stoppedAssistantMessageIds.add(current.assistantMessageId)
+        activeStreamCalls[conversationId]?.cancel()
+        activeStreamJobs[conversationId]?.cancel()
     }
 }
 

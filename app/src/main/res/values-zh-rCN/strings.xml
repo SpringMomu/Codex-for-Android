@@ -87,7 +87,9 @@
     <string name="activity_search">搜索</string>
     <string name="message_action_title_assistant">编辑助手消息</string>
     <string name="message_action_title_user">编辑消息</string>
-    <string name="message_action_hint">长按后的编辑或删除会直接改变这段对话的上下文。</string>
+    <string name="message_action_hint">长按菜单中的操作会直接改变这段对话的上下文。</string>
+    <string name="message_generate_reply">生成回复</string>
+    <string name="message_regenerate_reply">重新生成回复</string>
     <string name="message_edit_title_assistant">修改助手消息</string>
     <string name="message_edit_title_user">修改消息</string>
     <string name="message_edit_find_result_count">%1$d/%2$d</string>

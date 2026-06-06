@@ -72,19 +72,18 @@ class ChatViewModel(
     val uiState = combine(
         activeConversationId,
         messages,
-        container.chatStreamCoordinator.activeStreamState,
+        container.chatStreamCoordinator.activeStreamsState,
         container.settingsRepository.settings,
         savedScrollPosition,
-    ) { conversationId, messageList, activeStream, settings, scrollPosition ->
+    ) { conversationId, messageList, activeStreams, settings, scrollPosition ->
+        val activeStream = conversationId?.let { activeStreams[it] }
         ChatUiState(
             title = messageList.firstOrNull { it.role == MessageRole.USER }?.content?.take(36).orEmpty()
                 .ifBlank { "" },
             activeConversationId = conversationId,
             messages = messageList,
             isSending = activeStream != null,
-            streamingMessageId = activeStream
-                ?.takeIf { it.conversationId == conversationId }
-                ?.assistantMessageId,
+            streamingMessageId = activeStream?.assistantMessageId,
             baseUrl = settings.baseUrl,
             modelAlias = settings.modelAlias,
             reasoningEffort = settings.reasoningEffort,
@@ -104,10 +103,15 @@ class ChatViewModel(
     fun sendMessage() {
         val prompt = draft.trim()
         val imagePaths = selectedImagePaths
-        if ((prompt.isBlank() && imagePaths.isEmpty()) || container.chatStreamCoordinator.activeStreamState.value != null) return
+        val conversationId = activeConversationId.value
+        if ((prompt.isBlank() && imagePaths.isEmpty()) ||
+            container.chatStreamCoordinator.isConversationStreaming(conversationId)
+        ) {
+            return
+        }
         viewModelScope.launch {
             val result = container.chatStreamCoordinator.sendMessage(
-                activeConversationId = activeConversationId.value,
+                activeConversationId = conversationId,
                 prompt = prompt,
                 imagePaths = imagePaths,
             ) ?: return@launch
@@ -120,14 +124,21 @@ class ChatViewModel(
     }
 
     fun retryFailedMessage(messageId: Long) {
-        if (container.chatStreamCoordinator.activeStreamState.value != null) return
+        if (container.chatStreamCoordinator.isConversationStreaming(activeConversationId.value)) return
         viewModelScope.launch {
             container.chatStreamCoordinator.retryFailedMessage(messageId)
         }
     }
 
+    fun generateReplyFromMessage(messageId: Long) {
+        if (container.chatStreamCoordinator.isConversationStreaming(activeConversationId.value)) return
+        viewModelScope.launch {
+            container.chatStreamCoordinator.generateReplyFromMessage(messageId)
+        }
+    }
+
     fun stopStreaming() {
-        container.chatStreamCoordinator.stopActiveStream()
+        container.chatStreamCoordinator.stopActiveStream(activeConversationId.value)
     }
 
     fun importSelectedImages(uris: List<Uri>) {

@@ -49,6 +49,7 @@ class HistoryViewModel(
 
     fun deleteConversation(conversationId: Long) {
         viewModelScope.launch {
+            container.chatStreamCoordinator.stopActiveStream(conversationId)
             container.conversationRepository.deleteConversation(conversationId)
         }
     }

@@ -176,6 +176,7 @@ fun ChatRoute(
         onDeleteMessage = viewModel::deleteMessage,
         onPersistScrollPosition = viewModel::persistScrollPosition,
         onRetryMessage = viewModel::retryFailedMessage,
+        onGenerateReply = viewModel::generateReplyFromMessage,
         onStopStreaming = viewModel::stopStreaming,
     )
 }
@@ -197,6 +198,7 @@ private fun ChatScreen(
     onDeleteMessage: (Long) -> Unit,
     onPersistScrollPosition: (Long?, Int, Int) -> Unit,
     onRetryMessage: (Long) -> Unit,
+    onGenerateReply: (Long) -> Unit,
     onStopStreaming: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -724,6 +726,11 @@ private fun ChatScreen(
     actionMessage?.let { message ->
         MessageActionDialog(
             message = message,
+            canGenerateReply = !uiState.isSending,
+            onGenerateReply = {
+                actionMessage = null
+                onGenerateReply(message.id)
+            },
             onEdit = {
                 actionMessage = null
                 editingMessage = message
@@ -2128,6 +2135,8 @@ private fun TypingIndicatorBubble() {
 @Composable
 private fun MessageActionDialog(
     message: ChatMessage,
+    canGenerateReply: Boolean,
+    onGenerateReply: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
@@ -2156,6 +2165,21 @@ private fun MessageActionDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                TextButton(
+                    onClick = onGenerateReply,
+                    enabled = canGenerateReply,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(
+                            if (message.role == MessageRole.ASSISTANT) {
+                                R.string.message_regenerate_reply
+                            } else {
+                                R.string.message_generate_reply
+                            },
+                        ),
+                    )
+                }
                 TextButton(
                     onClick = onEdit,
                     modifier = Modifier.fillMaxWidth(),

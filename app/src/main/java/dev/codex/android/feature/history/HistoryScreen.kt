@@ -1,8 +1,11 @@
 package dev.codex.android.feature.history
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,11 +13,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -24,6 +28,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -44,7 +49,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -67,10 +71,44 @@ fun HistoryRoute(
 ) {
     val viewModel: HistoryViewModel = viewModel(factory = historyViewModelFactory(container))
     val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
+    val activeStreamingConversationIds = container.chatStreamCoordinator.activeStreamsState
+        .collectAsStateWithLifecycle()
+        .value
+        .keys
 
     HistoryScreen(
         uiState = uiState,
+        activeConversationId = null,
+        activeStreamingConversationIds = activeStreamingConversationIds,
+        unreadConversationIds = emptySet(),
         onBack = onBack,
+        onConversationSelected = onConversationSelected,
+        onNewConversation = onNewConversation,
+        onDeleteConversation = viewModel::deleteConversation,
+        onSearchQueryChange = viewModel::updateSearchQuery,
+    )
+}
+
+@Composable
+fun HistorySidebarRoute(
+    container: AppContainer,
+    activeConversationId: Long?,
+    unreadConversationIds: Set<Long>,
+    onConversationSelected: (Long) -> Unit,
+    onNewConversation: () -> Unit,
+) {
+    val viewModel: HistoryViewModel = viewModel(factory = historyViewModelFactory(container))
+    val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
+    val activeStreamingConversationIds = container.chatStreamCoordinator.activeStreamsState
+        .collectAsStateWithLifecycle()
+        .value
+        .keys
+
+    HistorySidebar(
+        uiState = uiState,
+        activeConversationId = activeConversationId,
+        activeStreamingConversationIds = activeStreamingConversationIds,
+        unreadConversationIds = unreadConversationIds,
         onConversationSelected = onConversationSelected,
         onNewConversation = onNewConversation,
         onDeleteConversation = viewModel::deleteConversation,
@@ -82,26 +120,15 @@ fun HistoryRoute(
 @Composable
 private fun HistoryScreen(
     uiState: HistoryUiState,
+    activeConversationId: Long?,
+    activeStreamingConversationIds: Set<Long>,
+    unreadConversationIds: Set<Long>,
     onBack: () -> Unit,
     onConversationSelected: (Long) -> Unit,
     onNewConversation: () -> Unit,
     onDeleteConversation: (Long) -> Unit,
     onSearchQueryChange: (String) -> Unit,
 ) {
-    var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
-    var searchFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
-        mutableStateOf(TextFieldValue(uiState.searchQuery))
-    }
-
-    LaunchedEffect(uiState.searchQuery) {
-        if (searchFieldValue.text != uiState.searchQuery) {
-            searchFieldValue = TextFieldValue(
-                text = uiState.searchQuery,
-                selection = TextRange(uiState.searchQuery.length),
-            )
-        }
-    }
-
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -124,89 +151,177 @@ private fun HistoryScreen(
             }
         },
     ) { innerPadding ->
-        Column(
+        HistoryListContent(
+            uiState = uiState,
+            activeConversationId = activeConversationId,
+            activeStreamingConversationIds = activeStreamingConversationIds,
+            unreadConversationIds = unreadConversationIds,
+            onConversationSelected = onConversationSelected,
+            onDeleteConversation = onDeleteConversation,
+            onSearchQueryChange = onSearchQueryChange,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        )
+    }
+}
+
+@Composable
+private fun HistorySidebar(
+    uiState: HistoryUiState,
+    activeConversationId: Long?,
+    activeStreamingConversationIds: Set<Long>,
+    unreadConversationIds: Set<Long>,
+    onConversationSelected: (Long) -> Unit,
+    onNewConversation: () -> Unit,
+    onDeleteConversation: (Long) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (uiState.searchQuery.isNotBlank()) {
-                    stringResource(R.string.history_search_result_count, uiState.sessionCount)
-                } else if (uiState.sessionCount == 0) {
-                    stringResource(R.string.history_empty_title)
-                } else {
-                    pluralStringResource(R.plurals.history_saved_conversations, uiState.sessionCount, uiState.sessionCount)
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
+                text = stringResource(R.string.history_title),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            OutlinedTextField(
-                value = searchFieldValue,
-                onValueChange = {
-                    searchFieldValue = it
-                    onSearchQueryChange(it.text)
-                },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(20.dp),
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Search,
-                        contentDescription = null,
-                    )
-                },
-                placeholder = {
-                    Text(stringResource(R.string.history_search_placeholder))
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.outline,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    disabledContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = MaterialTheme.colorScheme.primary,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                ),
+            IconButton(onClick = onNewConversation) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.new_conversation),
+                )
+            }
+        }
+        HistoryListContent(
+            uiState = uiState,
+            activeConversationId = activeConversationId,
+            activeStreamingConversationIds = activeStreamingConversationIds,
+            unreadConversationIds = unreadConversationIds,
+            onConversationSelected = onConversationSelected,
+            onDeleteConversation = onDeleteConversation,
+            onSearchQueryChange = onSearchQueryChange,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun HistoryListContent(
+    uiState: HistoryUiState,
+    activeConversationId: Long?,
+    activeStreamingConversationIds: Set<Long>,
+    unreadConversationIds: Set<Long>,
+    onConversationSelected: (Long) -> Unit,
+    onDeleteConversation: (Long) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
+    var searchFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(uiState.searchQuery))
+    }
+
+    LaunchedEffect(uiState.searchQuery) {
+        if (searchFieldValue.text != uiState.searchQuery) {
+            searchFieldValue = TextFieldValue(
+                text = uiState.searchQuery,
+                selection = TextRange(uiState.searchQuery.length),
             )
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = PaddingValues(bottom = 24.dp),
-            ) {
-                if (uiState.sessions.isEmpty()) {
-                    item {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            shape = RoundedCornerShape(24.dp),
-                        ) {
-                            Text(
-                                text = if (uiState.searchQuery.isBlank()) {
-                                    stringResource(R.string.history_empty_hint)
-                                } else {
-                                    stringResource(R.string.history_search_empty_hint)
-                                },
-                                modifier = Modifier.padding(20.dp),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                } else {
-                    items(uiState.sessions, key = { it.id }) { session ->
-                        HistoryItem(
-                            session = session,
-                            onConversationSelected = onConversationSelected,
-                            onDeleteConversation = { pendingDelete = session },
+        }
+    }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = if (uiState.searchQuery.isNotBlank()) {
+                stringResource(R.string.history_search_result_count, uiState.sessionCount)
+            } else if (uiState.sessionCount == 0) {
+                stringResource(R.string.history_empty_title)
+            } else {
+                pluralStringResource(R.plurals.history_saved_conversations, uiState.sessionCount, uiState.sessionCount)
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        OutlinedTextField(
+            value = searchFieldValue,
+            onValueChange = {
+                searchFieldValue = it
+                onSearchQueryChange(it.text)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(20.dp),
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = null,
+                )
+            },
+            placeholder = {
+                Text(stringResource(R.string.history_search_placeholder))
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.outline,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                disabledContainerColor = MaterialTheme.colorScheme.surface,
+                focusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                cursorColor = MaterialTheme.colorScheme.primary,
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        )
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
+        ) {
+            if (uiState.sessions.isEmpty()) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(24.dp),
+                    ) {
+                        Text(
+                            text = if (uiState.searchQuery.isBlank()) {
+                                stringResource(R.string.history_empty_hint)
+                            } else {
+                                stringResource(R.string.history_search_empty_hint)
+                            },
+                            modifier = Modifier.padding(20.dp),
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
+                }
+            } else {
+                items(uiState.sessions, key = { it.id }) { session ->
+                    HistoryItem(
+                        session = session,
+                        selected = session.id == activeConversationId,
+                        isStreaming = activeStreamingConversationIds.contains(session.id),
+                        isUnread = unreadConversationIds.contains(session.id),
+                        onConversationSelected = onConversationSelected,
+                        onDeleteConversation = { pendingDelete = session },
+                    )
                 }
             }
         }
@@ -239,9 +354,28 @@ private fun HistoryScreen(
 @Composable
 private fun HistoryItem(
     session: ConversationSummary,
+    selected: Boolean,
+    isStreaming: Boolean,
+    isUnread: Boolean,
     onConversationSelected: (Long) -> Unit,
     onDeleteConversation: () -> Unit,
 ) {
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val supportingColor = if (selected) {
+        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -249,8 +383,13 @@ private fun HistoryItem(
                 onClick = { onConversationSelected(session.id) },
                 onLongClick = onDeleteConversation,
             ),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
         shape = RoundedCornerShape(24.dp),
+        border = if (selected) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f))
+        } else {
+            null
+        },
     ) {
         Row(
             modifier = Modifier
@@ -263,15 +402,37 @@ private fun HistoryItem(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text(
-                    text = session.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = session.title,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = contentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (isStreaming) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(16.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp,
+                        )
+                    } else if (isUnread) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(MaterialTheme.colorScheme.primary, CircleShape),
+                        )
+                    }
+                }
                 Text(
                     text = session.preview,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = supportingColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -279,13 +440,13 @@ private fun HistoryItem(
                 Text(
                     text = stringResource(R.string.history_updated_at, formatTimestamp(session.updatedAt)),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = supportingColor,
                 )
             }
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = contentColor,
             )
         }
     }

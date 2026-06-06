@@ -87,7 +87,9 @@
     <string name="activity_search">Search</string>
     <string name="message_action_title_assistant">Edit assistant message</string>
     <string name="message_action_title_user">Edit message</string>
-    <string name="message_action_hint">Editing or deleting after a long press changes this conversation\'s context directly.</string>
+    <string name="message_action_hint">Actions from this menu can change this conversation\'s context directly.</string>
+    <string name="message_generate_reply">Generate reply</string>
+    <string name="message_regenerate_reply">Regenerate reply</string>
     <string name="message_edit_title_assistant">Edit assistant message</string>
     <string name="message_edit_title_user">Edit message</string>
     <string name="message_edit_find_result_count">%1$d/%2$d</string>
