@@ -10,9 +10,13 @@
 
     <string name="settings_title">Settings</string>
     <string name="settings_saved_at">Saved at %1$s</string>
+    <string name="settings_chat_provider">Chat provider</string>
+    <string name="settings_chat_provider_codex">Codex</string>
+    <string name="settings_chat_provider_claude">Claude</string>
     <string name="settings_base_url">Base URL</string>
     <string name="settings_api_key">API Key</string>
     <string name="settings_model_alias">Model alias</string>
+    <string name="settings_max_context_tokens">Max context tokens</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_system">Follow system</string>
     <string name="settings_language_english">English</string>

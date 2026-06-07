@@ -4,6 +4,7 @@ import dev.codex.android.core.i18n.AppStrings
 import dev.codex.android.core.media.ImageProcessing
 import dev.codex.android.data.model.AppSettings
 import dev.codex.android.data.model.ChatMessage
+import dev.codex.android.data.model.ChatProvider
 import dev.codex.android.data.model.MessageRole
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -81,12 +82,23 @@ class OpenAiCompatService(
             require(settings.apiKey.isNotBlank()) { appStrings.errorFillApiKey(settings.languageTag) }
             require(settings.modelAlias.isNotBlank()) { appStrings.errorFillModelAlias(settings.languageTag) }
 
+            val requestHistory = trimHistoryToTokenLimit(settings, history)
+            if (settings.chatProvider == ChatProvider.CLAUDE) {
+                executeClaudeStreamingRequest(
+                    settings = settings,
+                    history = requestHistory,
+                    onEvent = onEvent,
+                    onCallCreated = onCallCreated,
+                )
+                return@runCatching Unit
+            }
+
             var lastError: Throwable? = null
             for ((index, toolType) in WEB_SEARCH_TOOL_TYPES.withIndex()) {
                 try {
                     executeStreamingRequest(
                         settings = settings,
-                        history = history,
+                        history = requestHistory,
                         onEvent = onEvent,
                         webSearchToolType = toolType,
                         onCallCreated = onCallCreated,
@@ -232,6 +244,45 @@ class OpenAiCompatService(
         }
     }
 
+    private suspend fun executeClaudeStreamingRequest(
+        settings: AppSettings,
+        history: List<ChatMessage>,
+        onEvent: suspend (StreamEvent) -> Unit,
+        onCallCreated: ((Call) -> Unit)? = null,
+    ) {
+        val requestBody = ClaudeMessagesRequest(
+            model = settings.modelAlias,
+            maxTokens = CLAUDE_MAX_TOKENS,
+            system = settings.systemPrompt.ifBlank { DEFAULT_CHAT_INSTRUCTIONS },
+            messages = buildClaudeMessages(history),
+            stream = true,
+        )
+
+        val request = Request.Builder()
+            .url(resolveClaudeMessagesEndpoint(settings.baseUrl))
+            .header("x-api-key", settings.apiKey)
+            .header("Authorization", "Bearer ${settings.apiKey}")
+            .header("anthropic-version", CLAUDE_API_VERSION)
+            .header("Content-Type", "application/json")
+            .post(json.encodeToString(ClaudeMessagesRequest.serializer(), requestBody).toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        val call = okHttpClient.newCall(request)
+        onCallCreated?.invoke(call)
+        call.execute().use { response ->
+            if (!response.isSuccessful) {
+                val responseBody = response.body?.string().orEmpty()
+                error(responseBody.ifBlank { appStrings.errorRequestFailedHttp(settings.languageTag, response.code) })
+            }
+            val responseBody = response.body ?: error(appStrings.errorEmptyResponseBody(settings.languageTag))
+            parseClaudeStreamingResponse(
+                reader = responseBody.charStream().buffered(),
+                languageTag = settings.languageTag,
+                onEvent = onEvent,
+            )
+        }
+    }
+
     private fun isUnsupportedToolTypeError(message: String?): Boolean {
         val normalized = message.orEmpty()
         return normalized.contains("Unsupported tool type", ignoreCase = true) ||
@@ -240,18 +291,93 @@ class OpenAiCompatService(
 
     private fun buildRequestMessages(
         history: List<ChatMessage>,
-    ): List<ResponseInputItem> = sanitizeHistoryForModel(history)
-            .filterNot {
-                it.role == MessageRole.SYSTEM ||
-                    it.isError ||
-                    (it.content.isBlank() && it.imagePaths.isEmpty())
-            }
+    ): List<ResponseInputItem> = modelEligibleHistory(history)
             .map { message ->
                 ResponseInputItem(
                     role = message.role.toStorage(),
                     content = buildRequestContent(message),
                 )
             }
+
+    private fun buildClaudeMessages(
+        history: List<ChatMessage>,
+    ): List<ClaudeMessage> {
+        val messages = mutableListOf<ClaudeMessage>()
+        modelEligibleHistory(history)
+            .forEach { message ->
+                val role = when (message.role) {
+                    MessageRole.ASSISTANT -> "assistant"
+                    MessageRole.USER -> "user"
+                    MessageRole.SYSTEM -> return@forEach
+                }
+                val content = buildClaudeContent(message)
+                if (content.isEmpty()) return@forEach
+
+                val latest = messages.lastOrNull()
+                if (latest?.role == role) {
+                    messages[messages.lastIndex] = latest.copy(
+                        content = latest.content + ClaudeContentBlock(type = "text", text = "\n\n") + content,
+                    )
+                } else {
+                    messages += ClaudeMessage(
+                        role = role,
+                        content = content,
+                    )
+                }
+            }
+        return messages
+    }
+
+    private fun modelEligibleHistory(history: List<ChatMessage>): List<ChatMessage> = sanitizeHistoryForModel(history)
+        .filterNot {
+            it.role == MessageRole.SYSTEM ||
+                it.isError ||
+                (it.content.isBlank() && it.imagePaths.isEmpty())
+        }
+
+    private fun trimHistoryToTokenLimit(
+        settings: AppSettings,
+        history: List<ChatMessage>,
+    ): List<ChatMessage> {
+        val messages = modelEligibleHistory(history)
+        if (messages.isEmpty()) return emptyList()
+
+        val maxContextTokens = settings.maxContextTokens.coerceAtLeast(1)
+        var tokenTotal = estimateTextTokens(settings.systemPrompt.ifBlank { DEFAULT_CHAT_INSTRUCTIONS })
+        val selected = mutableListOf<ChatMessage>()
+        for (message in messages.asReversed()) {
+            val messageTokens = estimateMessageTokens(message)
+            val fitsLimit = tokenTotal + messageTokens <= maxContextTokens
+            if (selected.isEmpty() || fitsLimit) {
+                selected += message
+                tokenTotal += messageTokens
+            } else {
+                break
+            }
+        }
+        return selected.asReversed()
+    }
+
+    private fun estimateMessageTokens(message: ChatMessage): Int {
+        return MESSAGE_TOKEN_OVERHEAD +
+            estimateTextTokens(message.role.toStorage()) +
+            estimateTextTokens(message.content) +
+            (message.imagePaths.size * IMAGE_ATTACHMENT_TOKEN_ESTIMATE)
+    }
+
+    private fun estimateTextTokens(text: String): Int {
+        if (text.isBlank()) return 0
+        var asciiChars = 0
+        var nonAsciiChars = 0
+        text.forEach { char ->
+            if (char.code < 128) {
+                asciiChars += 1
+            } else {
+                nonAsciiChars += 1
+            }
+        }
+        return (((asciiChars + 3) / 4) + nonAsciiChars).coerceAtLeast(1)
+    }
 
     private fun sanitizeHistoryForModel(history: List<ChatMessage>): List<ChatMessage> = history.map { message ->
         // Reasoning summary is UI-only metadata and must never be sent back as model context.
@@ -284,8 +410,34 @@ class OpenAiCompatService(
         return items
     }
 
+    private fun buildClaudeContent(message: ChatMessage): List<ClaudeContentBlock> {
+        val items = mutableListOf<ClaudeContentBlock>()
+
+        if (message.content.isNotBlank()) {
+            items += ClaudeContentBlock(
+                type = "text",
+                text = message.content,
+            )
+        }
+
+        if (message.role == MessageRole.USER) {
+            items += message.imagePaths.mapNotNull { path ->
+                val preparedImage = ImageProcessing.prepareImageForUpload(path) ?: return@mapNotNull null
+                ClaudeContentBlock(
+                    type = "image",
+                    source = ClaudeImageSource(
+                        mediaType = preparedImage.mimeType,
+                        data = Base64.getEncoder().encodeToString(preparedImage.bytes),
+                    ),
+                )
+            }
+        }
+
+        return items
+    }
+
     private fun resolveEndpoint(baseUrl: String): String {
-        val trimmed = baseUrl.trim().removeSuffix("/")
+        val trimmed = normalizeBaseUrl(baseUrl)
         return when {
             trimmed.endsWith("/v1/responses") -> trimmed
             trimmed.endsWith("/responses") -> trimmed
@@ -294,8 +446,18 @@ class OpenAiCompatService(
         }
     }
 
+    private fun resolveClaudeMessagesEndpoint(baseUrl: String): String {
+        val trimmed = normalizeBaseUrl(baseUrl)
+        return when {
+            trimmed.endsWith("/v1/messages") -> trimmed
+            trimmed.endsWith("/messages") -> trimmed
+            trimmed.endsWith("/v1") -> "$trimmed/messages"
+            else -> "$trimmed/v1/messages"
+        }
+    }
+
     private fun resolveImageEndpoint(baseUrl: String, imagePath: String): String {
-        var trimmed = baseUrl.trim().removeSuffix("/")
+        var trimmed = normalizeBaseUrl(baseUrl)
         val suffixes = listOf("/images/generations", "/images/edits", "/responses")
         suffixes.forEach { suffix ->
             if (trimmed.endsWith(suffix)) {
@@ -309,6 +471,15 @@ class OpenAiCompatService(
             else -> "$trimmed/v1"
         }
         return "$base/$imagePath"
+    }
+
+    private fun normalizeBaseUrl(baseUrl: String): String {
+        val trimmed = baseUrl.trim().removeSuffix("/")
+        return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            trimmed
+        } else {
+            "https://$trimmed"
+        }
     }
 
     private fun extractImageBase64(
@@ -434,6 +605,68 @@ class OpenAiCompatService(
         return reply
     }
 
+    private suspend fun parseClaudeStreamingResponse(
+        reader: java.io.BufferedReader,
+        languageTag: String,
+        onEvent: suspend (StreamEvent) -> Unit,
+    ): AssistantReply {
+        val content = StringBuilder()
+        var pendingError: String? = null
+
+        reader.useLines { lines ->
+            lines.forEach { line ->
+                if (!line.startsWith("data: ")) return@forEach
+                val rawPayload = line.removePrefix("data: ").trim()
+                if (rawPayload == "[DONE]" || rawPayload.isBlank()) return@forEach
+
+                val payload = json.parseToJsonElement(rawPayload).jsonObject
+                when (payload["type"]?.jsonPrimitive?.contentOrNull) {
+                    "content_block_start" -> {
+                        val text = payload["content_block"]
+                            ?.jsonObject
+                            ?.get("text")
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            .orEmpty()
+                        if (text.isNotEmpty()) {
+                            content.append(text)
+                            onEvent(StreamEvent.TextDelta(text))
+                        }
+                    }
+
+                    "content_block_delta" -> {
+                        val delta = payload["delta"]?.jsonObject
+                        val text = delta
+                            ?.get("text")
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            .orEmpty()
+                        if (text.isNotEmpty()) {
+                            content.append(text)
+                            onEvent(StreamEvent.TextDelta(text))
+                        }
+                    }
+
+                    "error" -> {
+                        pendingError = payload["error"]
+                            ?.jsonObject
+                            ?.get("message")
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: payload["message"]?.jsonPrimitive?.contentOrNull
+                    }
+                }
+            }
+        }
+
+        pendingError?.let { error(it) }
+        val reply = AssistantReply(
+            text = content.toString().trim().ifBlank { error(appStrings.errorNoVisibleReply(languageTag)) },
+        )
+        onEvent(StreamEvent.Completed(reply))
+        return reply
+    }
+
     private fun extractCompletedText(payload: JsonObject): String {
         val output = payload["response"]
             ?.jsonObject
@@ -507,6 +740,37 @@ class OpenAiCompatService(
     )
 
     @Serializable
+    private data class ClaudeMessagesRequest(
+        val model: String,
+        @kotlinx.serialization.SerialName("max_tokens")
+        val maxTokens: Int,
+        val system: String,
+        val messages: List<ClaudeMessage>,
+        val stream: Boolean,
+    )
+
+    @Serializable
+    private data class ClaudeMessage(
+        val role: String,
+        val content: List<ClaudeContentBlock>,
+    )
+
+    @Serializable
+    private data class ClaudeContentBlock(
+        val type: String,
+        val text: String? = null,
+        val source: ClaudeImageSource? = null,
+    )
+
+    @Serializable
+    private data class ClaudeImageSource(
+        val type: String = "base64",
+        @kotlinx.serialization.SerialName("media_type")
+        val mediaType: String,
+        val data: String,
+    )
+
+    @Serializable
     private data class ResponsesRequest(
         val model: String,
         val stream: Boolean,
@@ -553,6 +817,10 @@ class OpenAiCompatService(
         val WEB_SEARCH_TOOL_TYPES = listOf("web_search", "web_search_preview")
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         const val IMAGE_MODEL = "gpt-image-2"
+        const val CLAUDE_API_VERSION = "2023-06-01"
+        const val CLAUDE_MAX_TOKENS = 4096
+        const val MESSAGE_TOKEN_OVERHEAD = 8
+        const val IMAGE_ATTACHMENT_TOKEN_ESTIMATE = 1600
         const val DEFAULT_CHAT_INSTRUCTIONS = "You are a helpful assistant."
     }
 }

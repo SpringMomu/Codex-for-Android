@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.codex.android.data.model.ChatMessage
+import dev.codex.android.data.model.ChatProvider
 import dev.codex.android.data.model.ConversationScrollPosition
 import dev.codex.android.data.model.MessageRole
 import dev.codex.android.core.di.AppContainer
@@ -28,6 +29,7 @@ data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val isSending: Boolean = false,
     val streamingMessageId: Long? = null,
+    val chatProvider: ChatProvider = ChatProvider.CODEX,
     val baseUrl: String = "",
     val modelAlias: String = "",
     val reasoningEffort: String = "",
@@ -84,6 +86,7 @@ class ChatViewModel(
             messages = messageList,
             isSending = activeStream != null,
             streamingMessageId = activeStream?.assistantMessageId,
+            chatProvider = settings.chatProvider,
             baseUrl = settings.baseUrl,
             modelAlias = settings.modelAlias,
             reasoningEffort = settings.reasoningEffort,

@@ -2,10 +2,12 @@ package dev.codex.android.data.repository
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dev.codex.android.core.i18n.AppLanguage
 import dev.codex.android.data.model.AppSettings
+import dev.codex.android.data.model.ChatProvider
 import dev.codex.android.data.model.ConversationScrollPosition
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -21,11 +23,13 @@ class SettingsRepository(
     private val json = Json
 
     private object Keys {
+        val chatProvider = stringPreferencesKey("chat_provider")
         val baseUrl = stringPreferencesKey("base_url")
         val apiKey = stringPreferencesKey("api_key")
         val imageBaseUrl = stringPreferencesKey("image_base_url")
         val imageApiKey = stringPreferencesKey("image_api_key")
         val modelAlias = stringPreferencesKey("model_alias")
+        val maxContextTokens = intPreferencesKey("max_context_tokens")
         val reasoningEffort = stringPreferencesKey("reasoning_effort")
         val systemPrompt = stringPreferencesKey("system_prompt")
         val languageTag = stringPreferencesKey("language_tag")
@@ -35,11 +39,15 @@ class SettingsRepository(
     val settings: Flow<AppSettings> = context.appSettingsDataStore.data.map { preferences ->
         val languageTag = preferences[Keys.languageTag] ?: AppLanguage.SYSTEM.storageValue
         AppSettings(
+            chatProvider = ChatProvider.fromStorage(preferences[Keys.chatProvider]),
             baseUrl = preferences[Keys.baseUrl] ?: AppSettings().baseUrl,
             apiKey = preferences[Keys.apiKey] ?: "",
             imageBaseUrl = preferences[Keys.imageBaseUrl] ?: "",
             imageApiKey = preferences[Keys.imageApiKey] ?: "",
             modelAlias = preferences[Keys.modelAlias] ?: AppSettings().modelAlias,
+            maxContextTokens = preferences[Keys.maxContextTokens]
+                ?.takeIf { it > 0 }
+                ?: AppSettings.DEFAULT_MAX_CONTEXT_TOKENS,
             reasoningEffort = preferences[Keys.reasoningEffort] ?: AppSettings().reasoningEffort,
             systemPrompt = preferences[Keys.systemPrompt] ?: "",
             languageTag = languageTag,
@@ -52,11 +60,13 @@ class SettingsRepository(
 
     suspend fun save(settings: AppSettings) {
         context.appSettingsDataStore.edit { preferences ->
+            preferences[Keys.chatProvider] = settings.chatProvider.storageValue
             preferences[Keys.baseUrl] = settings.baseUrl.trim()
             preferences[Keys.apiKey] = settings.apiKey.trim()
             preferences[Keys.imageBaseUrl] = settings.imageBaseUrl.trim()
             preferences[Keys.imageApiKey] = settings.imageApiKey.trim()
             preferences[Keys.modelAlias] = settings.modelAlias.trim()
+            preferences[Keys.maxContextTokens] = settings.maxContextTokens.coerceAtLeast(1)
             preferences[Keys.reasoningEffort] = settings.reasoningEffort.trim()
             preferences[Keys.systemPrompt] = settings.systemPrompt.trim()
             preferences[Keys.languageTag] = settings.languageTag.trim().ifBlank { AppLanguage.SYSTEM.storageValue }

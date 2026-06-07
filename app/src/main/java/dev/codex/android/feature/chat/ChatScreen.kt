@@ -121,6 +121,7 @@ import dev.codex.android.core.di.AppContainer
 import dev.codex.android.core.media.ImageProcessing
 import dev.codex.android.data.model.ChatActivity
 import dev.codex.android.data.model.ChatMessage
+import dev.codex.android.data.model.ChatProvider
 import dev.codex.android.data.model.MessageRole
 import dev.codex.android.ui.format.formatTimestamp
 import dev.codex.android.ui.markdown.MarkdownText
@@ -527,6 +528,12 @@ private fun ChatScreen(
         },
 ) { innerPadding ->
     val modelPlaceholder = stringResource(R.string.model_not_configured)
+    val providerTitle = stringResource(
+        when (uiState.chatProvider) {
+            ChatProvider.CODEX -> R.string.settings_chat_provider_codex
+            ChatProvider.CLAUDE -> R.string.settings_chat_provider_claude
+        },
+    )
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -534,6 +541,7 @@ private fun ChatScreen(
             .padding(horizontal = 16.dp),
         ) {
             ChatHeader(
+                title = providerTitle,
                 modelName = uiState.modelAlias.ifBlank { modelPlaceholder },
                 isSearchMode = isSearchMode,
                 onOpenSearch = {
@@ -818,6 +826,7 @@ private fun ChatScreen(
 
 @Composable
 private fun ChatHeader(
+    title: String,
     modelName: String,
     isSearchMode: Boolean,
     onOpenSearch: () -> Unit,
@@ -839,7 +848,7 @@ private fun ChatHeader(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = "ChatGPT",
+                text = title,
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )

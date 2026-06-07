@@ -44,8 +44,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -53,6 +55,7 @@ import dev.codex.android.R
 import dev.codex.android.core.i18n.AppLanguage
 import dev.codex.android.core.di.AppContainer
 import dev.codex.android.data.model.AppSettings
+import dev.codex.android.data.model.ChatProvider
 import dev.codex.android.ui.format.formatTimestamp
 import kotlin.math.roundToInt
 
@@ -78,11 +81,17 @@ private fun SettingsScreen(
     onBack: () -> Unit,
     onSave: (AppSettings) -> Unit,
 ) {
+    var chatProvider by rememberSaveable(uiState.settings.chatProvider.storageValue) {
+        mutableStateOf(uiState.settings.chatProvider.storageValue)
+    }
     var baseUrl by rememberSaveable(uiState.settings.baseUrl) { mutableStateOf(uiState.settings.baseUrl) }
     var apiKey by rememberSaveable(uiState.settings.apiKey) { mutableStateOf(uiState.settings.apiKey) }
     var imageBaseUrl by rememberSaveable(uiState.settings.imageBaseUrl) { mutableStateOf(uiState.settings.imageBaseUrl) }
     var imageApiKey by rememberSaveable(uiState.settings.imageApiKey) { mutableStateOf(uiState.settings.imageApiKey) }
     var modelAlias by rememberSaveable(uiState.settings.modelAlias) { mutableStateOf(uiState.settings.modelAlias) }
+    var maxContextTokens by rememberSaveable(uiState.settings.maxContextTokens) {
+        mutableStateOf(uiState.settings.maxContextTokens.toString())
+    }
     var languageTag by rememberSaveable(uiState.settings.languageTag) { mutableStateOf(uiState.settings.languageTag) }
     var reasoningEffort by rememberSaveable(uiState.settings.reasoningEffort) {
         mutableStateOf(reasoningEffortIndex(uiState.settings.reasoningEffort))
@@ -91,6 +100,15 @@ private fun SettingsScreen(
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var imageKeyVisible by rememberSaveable { mutableStateOf(false) }
     var imageSettingsExpanded by rememberSaveable { mutableStateOf(false) }
+    val selectedChatProvider = ChatProvider.fromStorage(chatProvider)
+    val baseUrlHint = when (selectedChatProvider) {
+        ChatProvider.CODEX -> "https://api.openai.com"
+        ChatProvider.CLAUDE -> "https://ai.furrist.com"
+    }
+    val modelAliasHint = when (selectedChatProvider) {
+        ChatProvider.CODEX -> "gpt-5.4"
+        ChatProvider.CLAUDE -> "claude-sonnet-4-6"
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -125,9 +143,13 @@ private fun SettingsScreen(
                 )
             }
 
+            ChatProviderField(
+                selectedProvider = selectedChatProvider,
+                onProviderChange = { chatProvider = it.storageValue },
+            )
             SettingField(
                 title = stringResource(R.string.settings_base_url),
-                hint = "https://api.openai.com",
+                hint = baseUrlHint,
                 value = baseUrl,
                 onValueChange = { baseUrl = it },
                 leadingIcon = Icons.Rounded.Cloud,
@@ -160,19 +182,29 @@ private fun SettingsScreen(
             )
             SettingField(
                 title = stringResource(R.string.settings_model_alias),
-                hint = "gpt-5.4",
+                hint = modelAliasHint,
                 value = modelAlias,
                 onValueChange = { modelAlias = it },
                 leadingIcon = Icons.Rounded.Memory,
+            )
+            SettingField(
+                title = stringResource(R.string.settings_max_context_tokens),
+                hint = AppSettings.DEFAULT_MAX_CONTEXT_TOKENS.toString(),
+                value = maxContextTokens,
+                onValueChange = { maxContextTokens = it.filter(Char::isDigit).take(9) },
+                leadingIcon = Icons.Rounded.Memory,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
             LanguageField(
                 selectedLanguageTag = languageTag,
                 onLanguageTagChange = { languageTag = it },
             )
-            ReasoningEffortField(
-                selectedIndex = reasoningEffort,
-                onSelectedIndexChange = { reasoningEffort = it },
-            )
+            if (selectedChatProvider == ChatProvider.CODEX) {
+                ReasoningEffortField(
+                    selectedIndex = reasoningEffort,
+                    onSelectedIndexChange = { reasoningEffort = it },
+                )
+            }
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(24.dp),
@@ -196,11 +228,13 @@ private fun SettingsScreen(
                 onClick = {
                     onSave(
                         AppSettings(
+                            chatProvider = selectedChatProvider,
                             baseUrl = baseUrl,
                             apiKey = apiKey,
                             imageBaseUrl = imageBaseUrl,
                             imageApiKey = imageApiKey,
                             modelAlias = modelAlias,
+                            maxContextTokens = parseMaxContextTokens(maxContextTokens),
                             reasoningEffort = reasoningEffortValue(reasoningEffort),
                             systemPrompt = systemPrompt,
                             languageTag = languageTag,
@@ -214,6 +248,43 @@ private fun SettingsScreen(
                 enabled = !uiState.isSaving,
             ) {
                 Text(stringResource(if (uiState.isSaving) R.string.settings_saving else R.string.settings_save))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatProviderField(
+    selectedProvider: ChatProvider,
+    onProviderChange: (ChatProvider) -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(stringResource(R.string.settings_chat_provider), style = MaterialTheme.typography.titleMedium)
+            ChatProvider.entries.forEach { provider ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onProviderChange(provider) }
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = selectedProvider == provider,
+                        onClick = { onProviderChange(provider) },
+                    )
+                    Text(
+                        text = chatProviderLabel(provider),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
             }
         }
     }
@@ -387,6 +458,17 @@ private fun reasoningEffortValue(index: Int): String = when (index.coerceIn(0, 3
     else -> "xhigh"
 }
 
+private fun parseMaxContextTokens(value: String): Int =
+    value.toIntOrNull()?.coerceAtLeast(1) ?: AppSettings.DEFAULT_MAX_CONTEXT_TOKENS
+
+@Composable
+private fun chatProviderLabel(provider: ChatProvider): String = stringResource(
+    when (provider) {
+        ChatProvider.CODEX -> R.string.settings_chat_provider_codex
+        ChatProvider.CLAUDE -> R.string.settings_chat_provider_claude
+    },
+)
+
 @Composable
 private fun reasoningEffortLabel(value: String): String = stringResource(
     when (value.lowercase()) {
@@ -415,6 +497,7 @@ private fun SettingField(
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     trailingAction: @Composable (() -> Unit)? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -433,6 +516,7 @@ private fun SettingField(
                 visualTransformation = visualTransformation,
                 leadingIcon = { Icon(imageVector = leadingIcon, contentDescription = null) },
                 trailingIcon = trailingAction,
+                keyboardOptions = keyboardOptions,
                 singleLine = true,
             )
         }

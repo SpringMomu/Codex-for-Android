@@ -10,9 +10,13 @@
 
     <string name="settings_title">设置</string>
     <string name="settings_saved_at">已保存于 %1$s</string>
+    <string name="settings_chat_provider">聊天调用</string>
+    <string name="settings_chat_provider_codex">Codex</string>
+    <string name="settings_chat_provider_claude">Claude</string>
     <string name="settings_base_url">接口地址</string>
     <string name="settings_api_key">API Key</string>
     <string name="settings_model_alias">模型代号</string>
+    <string name="settings_max_context_tokens">上下文 Token 上限</string>
     <string name="settings_language">界面语言</string>
     <string name="settings_language_system">跟随系统</string>
     <string name="settings_language_english">English</string>
