@@ -32,6 +32,7 @@ data class ChatUiState(
     val chatProvider: ChatProvider = ChatProvider.CODEX,
     val baseUrl: String = "",
     val modelAlias: String = "",
+    val availableModels: List<String> = emptyList(),
     val reasoningEffort: String = "",
     val hasCredentials: Boolean = false,
     val savedScrollPosition: ConversationScrollPosition? = null,
@@ -89,6 +90,7 @@ class ChatViewModel(
             chatProvider = settings.chatProvider,
             baseUrl = settings.baseUrl,
             modelAlias = settings.modelAlias,
+            availableModels = settings.modelsFor(settings.chatProvider),
             reasoningEffort = settings.reasoningEffort,
             hasCredentials = settings.apiKey.isNotBlank(),
             savedScrollPosition = scrollPosition,
@@ -101,6 +103,13 @@ class ChatViewModel(
 
     fun updateDraft(value: String) {
         draft = value
+    }
+
+    fun selectModel(modelAlias: String) {
+        val provider = uiState.value.chatProvider
+        viewModelScope.launch {
+            container.settingsRepository.selectChatModel(provider, modelAlias)
+        }
     }
 
     fun sendMessage() {

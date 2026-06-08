@@ -42,11 +42,13 @@ class ImageGenerationViewModel(
         container.imageGenerationCoordinator.activeGenerationIds,
         container.settingsRepository.settings,
     ) { generations, activeIds, settings ->
+        val imageBaseUrl = settings.imageBaseUrl.ifBlank { settings.codexBaseUrl }
+        val imageApiKey = settings.imageApiKey.ifBlank { settings.codexApiKey }
         ImageGenerationUiState(
             generations = generations,
             activeGenerationIds = activeIds,
-            hasCredentials = settings.apiKey.isNotBlank(),
-            baseUrl = settings.baseUrl,
+            hasCredentials = imageApiKey.isNotBlank(),
+            baseUrl = imageBaseUrl,
         )
     }.stateIn(
         scope = viewModelScope,

@@ -735,8 +735,9 @@ class OpenAiCompatService(
     }
 
     private fun AppSettings.forImageGeneration(): AppSettings = copy(
-        baseUrl = imageBaseUrl.ifBlank { baseUrl },
-        apiKey = imageApiKey.ifBlank { apiKey },
+        chatProvider = ChatProvider.CODEX,
+        codexBaseUrl = imageBaseUrl.ifBlank { codexBaseUrl },
+        codexApiKey = imageApiKey.ifBlank { codexApiKey },
     )
 
     @Serializable

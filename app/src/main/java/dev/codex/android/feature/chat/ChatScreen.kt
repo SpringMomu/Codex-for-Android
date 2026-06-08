@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -179,6 +180,7 @@ fun ChatRoute(
         onRetryMessage = viewModel::retryFailedMessage,
         onGenerateReply = viewModel::generateReplyFromMessage,
         onStopStreaming = viewModel::stopStreaming,
+        onSelectModel = viewModel::selectModel,
     )
 }
 
@@ -201,6 +203,7 @@ private fun ChatScreen(
     onRetryMessage: (Long) -> Unit,
     onGenerateReply: (Long) -> Unit,
     onStopStreaming: () -> Unit,
+    onSelectModel: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
@@ -431,6 +434,14 @@ private fun ChatScreen(
         listState.scrollBy(correctionDelta)
     }
 
+    val modelPlaceholder = stringResource(R.string.model_not_configured)
+    val providerTitle = stringResource(
+        when (uiState.chatProvider) {
+            ChatProvider.CODEX -> R.string.settings_chat_provider_codex
+            ChatProvider.CLAUDE -> R.string.settings_chat_provider_claude
+        },
+    )
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
@@ -524,16 +535,17 @@ private fun ChatScreen(
                         }
                     }
                 }
+                ChatModelSelector(
+                    models = uiState.availableModels,
+                    selectedModel = uiState.modelAlias,
+                    placeholder = modelPlaceholder,
+                    enabled = !uiState.isSending,
+                    onSelectModel = onSelectModel,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         },
 ) { innerPadding ->
-    val modelPlaceholder = stringResource(R.string.model_not_configured)
-    val providerTitle = stringResource(
-        when (uiState.chatProvider) {
-            ChatProvider.CODEX -> R.string.settings_chat_provider_codex
-            ChatProvider.CLAUDE -> R.string.settings_chat_provider_claude
-        },
-    )
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -884,6 +896,81 @@ private fun ChatHeader(
             contentDescription = stringResource(R.string.start_new_conversation),
             onClick = onNewConversation,
         )
+    }
+}
+
+@Composable
+private fun ChatModelSelector(
+    models: List<String>,
+    selectedModel: String,
+    placeholder: String,
+    enabled: Boolean,
+    onSelectModel: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val visibleModels = remember(models, selectedModel) {
+        (models + selectedModel)
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .toList()
+    }
+
+    if (visibleModels.isEmpty()) {
+        Text(
+            text = placeholder,
+            modifier = modifier.padding(horizontal = 4.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        return
+    }
+
+    LazyRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 2.dp),
+    ) {
+        items(visibleModels, key = { it }) { modelAlias ->
+            val selected = modelAlias == selectedModel
+            Surface(
+                modifier = Modifier
+                    .heightIn(min = 32.dp)
+                    .widthIn(max = 220.dp)
+                    .clickable(
+                        enabled = enabled && !selected,
+                        onClick = { onSelectModel(modelAlias) },
+                    ),
+                shape = RoundedCornerShape(16.dp),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+                    },
+                ),
+            ) {
+                Text(
+                    text = modelAlias,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
     }
 }
 
