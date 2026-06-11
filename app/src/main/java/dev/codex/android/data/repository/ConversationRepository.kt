@@ -220,6 +220,61 @@ class ConversationRepository(
         return refreshConversationSnapshot(conversationId)
     }
 
+    /**
+     * Creates a new conversation that contains copies of every message from the start of the
+     * source conversation up to and including [messageId]. Attachments are duplicated so the new
+     * branch is fully independent of the original. Returns the new conversation id, or null when
+     * the message could not be found.
+     */
+    suspend fun branchConversationFromMessage(messageId: Long): Long? {
+        val target = chatDao.getMessage(messageId) ?: return null
+        val sourceMessages = chatDao.getMessages(target.conversationId)
+        val cutoff = sourceMessages.indexOfFirst { it.id == messageId }
+        if (cutoff < 0) return null
+        val branchMessages = sourceMessages.subList(0, cutoff + 1)
+        if (branchMessages.isEmpty()) return null
+
+        val now = System.currentTimeMillis()
+        val languageTag = settingsRepository.currentLanguageTag()
+        val firstUserMessage = branchMessages.firstOrNull {
+            MessageRole.fromStorage(it.role) == MessageRole.USER
+        }
+        val lastMessage = branchMessages.last()
+        val newConversationId = chatDao.insertConversation(
+            ConversationEntity(
+                title = titleFrom(
+                    firstUserMessage?.content.orEmpty(),
+                    firstUserMessage?.let { decodeImagePaths(it.imagePaths).size } ?: 0,
+                    languageTag,
+                ),
+                lastPreview = previewFrom(
+                    lastMessage.content,
+                    decodeImagePaths(lastMessage.imagePaths).size,
+                    languageTag,
+                ),
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
+
+        branchMessages.forEach { entity ->
+            val originalPaths = decodeImagePaths(entity.imagePaths)
+            val copiedPaths = if (originalPaths.isEmpty()) {
+                emptyList()
+            } else {
+                attachmentStorage.copyAttachments(originalPaths)
+            }
+            chatDao.insertMessage(
+                entity.copy(
+                    id = 0,
+                    conversationId = newConversationId,
+                    imagePaths = encodeImagePaths(copiedPaths),
+                ),
+            )
+        }
+        return newConversationId
+    }
+
     suspend fun deleteConversation(conversationId: Long) {
         val attachments = chatDao.getMessages(conversationId).flatMap { decodeImagePaths(it.imagePaths) }
         chatDao.deleteConversation(conversationId)

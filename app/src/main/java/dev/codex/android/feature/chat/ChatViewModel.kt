@@ -191,6 +191,15 @@ class ChatViewModel(
         }
     }
 
+    fun branchFromMessage(messageId: Long) {
+        viewModelScope.launch {
+            val newConversationId =
+                container.conversationRepository.branchConversationFromMessage(messageId) ?: return@launch
+            activeConversationId.value = newConversationId
+            createdConversation.tryEmit(newConversationId)
+        }
+    }
+
     fun persistScrollPosition(
         anchorMessageId: Long?,
         firstVisibleItemIndex: Int,

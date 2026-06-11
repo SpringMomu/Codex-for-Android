@@ -3,6 +3,7 @@ package dev.codex.android.feature.chat
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -50,9 +51,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.AltRoute
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.History
@@ -94,17 +100,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -176,6 +185,7 @@ fun ChatRoute(
         onOpenSettings = onOpenSettings,
         onUpdateMessage = viewModel::updateMessage,
         onDeleteMessage = viewModel::deleteMessage,
+        onBranchMessage = viewModel::branchFromMessage,
         onPersistScrollPosition = viewModel::persistScrollPosition,
         onRetryMessage = viewModel::retryFailedMessage,
         onGenerateReply = viewModel::generateReplyFromMessage,
@@ -199,6 +209,7 @@ private fun ChatScreen(
     onOpenSettings: () -> Unit,
     onUpdateMessage: (Long, String) -> Unit,
     onDeleteMessage: (Long) -> Unit,
+    onBranchMessage: (Long) -> Unit,
     onPersistScrollPosition: (Long?, Int, Int) -> Unit,
     onRetryMessage: (Long) -> Unit,
     onGenerateReply: (Long) -> Unit,
@@ -206,6 +217,7 @@ private fun ChatScreen(
     onSelectModel: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
@@ -750,6 +762,15 @@ private fun ChatScreen(
             onGenerateReply = {
                 actionMessage = null
                 onGenerateReply(message.id)
+            },
+            onCopy = {
+                actionMessage = null
+                clipboardManager.setText(AnnotatedString(message.content))
+                Toast.makeText(context, context.getString(R.string.message_copied), Toast.LENGTH_SHORT).show()
+            },
+            onBranch = {
+                actionMessage = null
+                onBranchMessage(message.id)
             },
             onEdit = {
                 actionMessage = null
@@ -2233,6 +2254,8 @@ private fun MessageActionDialog(
     message: ChatMessage,
     canGenerateReply: Boolean,
     onGenerateReply: () -> Unit,
+    onCopy: () -> Unit,
+    onBranch: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
@@ -2261,40 +2284,74 @@ private fun MessageActionDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                TextButton(
+                MessageActionButton(
+                    icon = Icons.Rounded.Autorenew,
+                    text = stringResource(
+                        if (message.role == MessageRole.ASSISTANT) {
+                            R.string.message_regenerate_reply
+                        } else {
+                            R.string.message_generate_reply
+                        },
+                    ),
                     onClick = onGenerateReply,
                     enabled = canGenerateReply,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        stringResource(
-                            if (message.role == MessageRole.ASSISTANT) {
-                                R.string.message_regenerate_reply
-                            } else {
-                                R.string.message_generate_reply
-                            },
-                        ),
-                    )
-                }
-                TextButton(
+                )
+                MessageActionButton(
+                    icon = Icons.Rounded.ContentCopy,
+                    text = stringResource(R.string.copy),
+                    onClick = onCopy,
+                )
+                MessageActionButton(
+                    icon = Icons.AutoMirrored.Rounded.AltRoute,
+                    text = stringResource(R.string.message_branch),
+                    onClick = onBranch,
+                )
+                MessageActionButton(
+                    icon = Icons.Rounded.Edit,
+                    text = stringResource(R.string.edit),
                     onClick = onEdit,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.edit))
-                }
-                TextButton(
+                )
+                MessageActionButton(
+                    icon = Icons.Rounded.DeleteOutline,
+                    text = stringResource(R.string.delete),
                     onClick = onDelete,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.delete))
-                }
-                TextButton(
+                )
+                MessageActionButton(
+                    icon = Icons.Rounded.Close,
+                    text = stringResource(R.string.cancel),
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.cancel))
-                }
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun MessageActionButton(
+    icon: ImageVector,
+    text: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = text,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }

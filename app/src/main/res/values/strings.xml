@@ -7,6 +7,7 @@
     <string name="edit">Edit</string>
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
+    <string name="copy">Copy</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_saved_at">Saved at %1$s</string>
@@ -104,6 +105,8 @@
     <string name="message_action_hint">Actions from this menu can change this conversation\'s context directly.</string>
     <string name="message_generate_reply">Generate reply</string>
     <string name="message_regenerate_reply">Regenerate reply</string>
+    <string name="message_branch">Branch from here</string>
+    <string name="message_copied">Copied to clipboard</string>
     <string name="message_edit_title_assistant">Edit assistant message</string>
     <string name="message_edit_title_user">Edit message</string>
     <string name="message_edit_find_result_count">%1$d/%2$d</string>

@@ -25,6 +25,24 @@ class AttachmentStorage(
         }
     }
 
+    suspend fun copyAttachments(paths: List<String>): List<String> = withContext(Dispatchers.IO) {
+        paths.map { path ->
+            val source = File(path)
+            if (!source.exists()) return@map path
+            val directory = File(context.filesDir, "attachments").apply { mkdirs() }
+            val extension = source.extension.takeIf { it.isNotBlank() }?.let { ".$it" }.orEmpty()
+            val destination = File(directory, "${UUID.randomUUID()}$extension")
+            runCatching {
+                source.inputStream().use { input ->
+                    destination.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                destination.absolutePath
+            }.getOrDefault(path)
+        }
+    }
+
     suspend fun saveGeneratedImage(base64: String): String = withContext(Dispatchers.IO) {
         val directory = File(context.filesDir, "generated-images").apply { mkdirs() }
         val destination = File(directory, "${UUID.randomUUID()}.png")
