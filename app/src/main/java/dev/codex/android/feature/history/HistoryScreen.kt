@@ -1,7 +1,7 @@
 package dev.codex.android.feature.history
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,21 +13,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -37,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -47,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
@@ -181,8 +182,8 @@ private fun HistorySidebar(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -192,14 +193,23 @@ private fun HistorySidebar(
             Text(
                 text = stringResource(R.string.history_title),
                 modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            IconButton(onClick = onNewConversation) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = stringResource(R.string.new_conversation),
-                )
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                IconButton(
+                    onClick = onNewConversation,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = stringResource(R.string.new_conversation),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
         HistoryListContent(
@@ -242,7 +252,7 @@ private fun HistoryListContent(
 
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         Text(
             text = if (uiState.searchQuery.isNotBlank()) {
@@ -253,7 +263,7 @@ private fun HistoryListContent(
                 pluralStringResource(R.plurals.history_saved_conversations, uiState.sessionCount, uiState.sessionCount)
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.labelMedium,
         )
         OutlinedTextField(
             value = searchFieldValue,
@@ -263,7 +273,7 @@ private fun HistoryListContent(
             },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(8.dp),
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Rounded.Search,
@@ -274,8 +284,8 @@ private fun HistoryListContent(
                 Text(stringResource(R.string.history_search_placeholder))
             },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.outline,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                 focusedContainerColor = MaterialTheme.colorScheme.surface,
                 unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                 disabledContainerColor = MaterialTheme.colorScheme.surface,
@@ -292,14 +302,16 @@ private fun HistoryListContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+            contentPadding = PaddingValues(bottom = 18.dp),
         ) {
             if (uiState.sessions.isEmpty()) {
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        shape = RoundedCornerShape(24.dp),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 32.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = if (uiState.searchQuery.isBlank()) {
@@ -307,8 +319,9 @@ private fun HistoryListContent(
                             } else {
                                 stringResource(R.string.history_search_empty_hint)
                             },
-                            modifier = Modifier.padding(20.dp),
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                     }
                 }
@@ -360,47 +373,60 @@ private fun HistoryItem(
     onConversationSelected: (Long) -> Unit,
     onDeleteConversation: () -> Unit,
 ) {
-    val containerColor = if (selected) {
-        MaterialTheme.colorScheme.secondaryContainer
+    val targetContainerColor = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
     } else {
-        MaterialTheme.colorScheme.surface
+        androidx.compose.ui.graphics.Color.Transparent
     }
+    val containerColor by animateColorAsState(
+        targetValue = targetContainerColor,
+        animationSpec = tween(durationMillis = 180),
+        label = "history-item-color",
+    )
     val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onSecondaryContainer
+        MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onSurface
     }
     val supportingColor = if (selected) {
-        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f)
+        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.68f)
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
                 onClick = { onConversationSelected(session.id) },
                 onLongClick = onDeleteConversation,
             ),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        shape = RoundedCornerShape(24.dp),
-        border = if (selected) {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f))
-        } else {
-            null
-        },
+        color = containerColor,
+        shape = RoundedCornerShape(8.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Spacer(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(32.dp)
+                    .background(
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            androidx.compose.ui.graphics.Color.Transparent
+                        },
+                        shape = RoundedCornerShape(2.dp),
+                    ),
+            )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -410,7 +436,7 @@ private fun HistoryItem(
                     Text(
                         text = session.title,
                         modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleSmall,
                         color = contentColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -433,21 +459,16 @@ private fun HistoryItem(
                 Text(
                     text = session.preview,
                     color = supportingColor,
-                    maxLines = 2,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(modifier = Modifier.padding(top = 2.dp))
                 Text(
                     text = stringResource(R.string.history_updated_at, formatTimestamp(session.updatedAt)),
                     style = MaterialTheme.typography.bodySmall,
                     color = supportingColor,
                 )
             }
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                contentDescription = null,
-                tint = contentColor,
-            )
         }
     }
 }

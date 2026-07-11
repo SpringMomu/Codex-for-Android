@@ -18,6 +18,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -313,7 +314,7 @@ private fun CodeBlockCard(
 ) {
     val clipboard = LocalClipboardManager.current
     var copied by remember(code) { mutableStateOf(false) }
-    val outlineColor = MaterialTheme.colorScheme.outline
+    val outlineColor = MaterialTheme.colorScheme.outlineVariant
     val headerColor = MaterialTheme.colorScheme.surfaceVariant
     val codeBodyColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -334,7 +335,7 @@ private fun CodeBlockCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, outlineColor),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -342,7 +343,7 @@ private fun CodeBlockCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(headerColor)
-                    .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 12.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -363,6 +364,7 @@ private fun CodeBlockCard(
                         clipboard.setText(AnnotatedString(code))
                         copied = true
                     },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                 ) {
                     Icon(
                         imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
@@ -385,7 +387,7 @@ private fun CodeBlockCard(
                     .fillMaxWidth()
                     .noHapticPressGesture(onLongPress = onLongPress)
                     .background(codeBodyColor)
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
                 Box(
                     modifier = Modifier

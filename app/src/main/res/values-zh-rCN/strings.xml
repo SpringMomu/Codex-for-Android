@@ -8,6 +8,7 @@
     <string name="delete">删除</string>
     <string name="cancel">取消</string>
     <string name="copy">复制</string>
+    <string name="more_actions">更多操作</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_saved_at">已保存于 %1$s</string>
@@ -64,7 +65,7 @@
     <string name="image_reference_selected">已选中的参考图会随本次生成一起提交。</string>
     <string name="image_generate">生成图片</string>
     <string name="image_history_title">历史图片</string>
-    <string name="image_history_empty">还没有图片历史。生成后会在这里按 prompt 对应展示。</string>
+    <string name="image_history_empty">还没有生成图片</string>
     <string name="image_reference_label">参考图</string>
     <string name="image_result_label">生成图</string>
     <string name="image_status_queued">排队中</string>
@@ -89,6 +90,7 @@
     <string name="chat_search_previous">上一条匹配消息</string>
     <string name="chat_search_next">下一条匹配消息</string>
     <string name="empty_chat_title">今天可以帮到你什么</string>
+    <string name="chat_reply_loading">正在生成回复</string>
     <string name="remove_image">移除图片</string>
     <string name="retry">重试</string>
     <string name="reasoning_summary">思考摘要</string>
@@ -133,8 +135,8 @@
     <string name="streaming_notification_text">保持应用在后台持续传输中</string>
 
     <plurals name="history_saved_conversations">
-        <item quantity="one">本地已保存 %d 条会话记录，长按可删除</item>
-        <item quantity="other">本地已保存 %d 条会话记录，长按可删除</item>
+        <item quantity="one">%d 条会话</item>
+        <item quantity="other">%d 条会话</item>
     </plurals>
     <plurals name="conversation_preview_images">
         <item quantity="one">[图片 %d 张]</item>

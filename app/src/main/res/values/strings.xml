@@ -8,6 +8,7 @@
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
     <string name="copy">Copy</string>
+    <string name="more_actions">More actions</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_saved_at">Saved at %1$s</string>
@@ -64,7 +65,7 @@
     <string name="image_reference_selected">Selected reference images will be submitted with this generation.</string>
     <string name="image_generate">Generate image</string>
     <string name="image_history_title">Image history</string>
-    <string name="image_history_empty">No image history yet. Generated images will be listed with their prompts here.</string>
+    <string name="image_history_empty">No generated images yet</string>
     <string name="image_reference_label">Reference</string>
     <string name="image_result_label">Result</string>
     <string name="image_status_queued">Queued</string>
@@ -89,6 +90,7 @@
     <string name="chat_search_previous">Previous matching message</string>
     <string name="chat_search_next">Next matching message</string>
     <string name="empty_chat_title">How can I help today</string>
+    <string name="chat_reply_loading">Generating response</string>
     <string name="remove_image">Remove image</string>
     <string name="retry">Retry</string>
     <string name="reasoning_summary">Reasoning summary</string>
@@ -133,8 +135,8 @@
     <string name="streaming_notification_text">Keeping the stream running in the background</string>
 
     <plurals name="history_saved_conversations">
-        <item quantity="one">Saved %d conversation locally. Long press to delete.</item>
-        <item quantity="other">Saved %d conversations locally. Long press to delete.</item>
+        <item quantity="one">%d saved conversation</item>
+        <item quantity="other">%d saved conversations</item>
     </plurals>
     <plurals name="conversation_preview_images">
         <item quantity="one">[%d image]</item>

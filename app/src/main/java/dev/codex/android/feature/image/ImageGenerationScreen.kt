@@ -9,7 +9,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -42,6 +46,8 @@ import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -147,13 +153,19 @@ private fun ImageGenerationScreen(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(innerPadding),
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 760.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
             ImageHeader(onBack = onBack)
             ImageComposer(
                 prompt = prompt,
@@ -192,6 +204,7 @@ private fun ImageGenerationScreen(
                     }
                 }
             }
+            }
         }
     }
 }
@@ -211,13 +224,8 @@ private fun ImageHeader(onBack: () -> Unit) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.image_mode_title),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = stringResource(R.string.image_mode_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -235,9 +243,10 @@ private fun ImageComposer(
     onGenerate: () -> Unit,
 ) {
     Card(
+        modifier = Modifier.animateContentSize(animationSpec = tween(180)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.8f)),
-        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -312,9 +321,10 @@ private fun ImageComposer(
                     Text(stringResource(R.string.image_reference_pick))
                 }
                 Spacer(modifier = Modifier.weight(1f))
-                TextButton(
+                Button(
                     onClick = onGenerate,
                     enabled = canGenerate,
+                    shape = RoundedCornerShape(8.dp),
                 ) {
                     Text(stringResource(R.string.image_generate))
                 }
@@ -385,8 +395,8 @@ private fun ImageGenerationCard(
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.82f)),
-        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -404,29 +414,43 @@ private fun ImageGenerationCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(generation.referenceImagePaths, key = { it }) { path ->
-                            LocalImageThumbnail(
-                                path = path,
-                                modifier = Modifier.size(82.dp),
-                            )
+                            LocalImageThumbnail(path = path, modifier = Modifier.size(64.dp))
                         }
                     }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                generation.generatedImagePath?.let { path ->
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(
-                            text = stringResource(R.string.image_result_label),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        LocalImageThumbnail(
-                            path = path,
-                            modifier = Modifier
-                                .size(132.dp)
-                                .clickable { previewPath = path },
-                        )
-                    }
+            val generatedPath = generation.generatedImagePath
+            if (generatedPath != null) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = stringResource(R.string.image_result_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LocalImageThumbnail(
+                        path = generatedPath,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clickable { previewPath = generatedPath },
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+            } else if (isActive) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(8.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp),
+                        strokeWidth = 2.dp,
+                    )
                 }
             }
             Row(
@@ -500,7 +524,7 @@ private fun ImageGenerationCard(
 
     previewPath?.let { path ->
         androidx.compose.ui.window.Dialog(onDismissRequest = { previewPath = null }) {
-            Surface(shape = RoundedCornerShape(24.dp), color = Color.Black) {
+            Surface(shape = RoundedCornerShape(12.dp), color = Color.Black) {
                 LocalImageThumbnail(
                     path = path,
                     modifier = Modifier
@@ -528,7 +552,7 @@ private fun LocalImageThumbnail(
     }
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         if (bitmap != null) {

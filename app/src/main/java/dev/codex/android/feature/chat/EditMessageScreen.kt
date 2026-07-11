@@ -114,7 +114,7 @@ fun EditMessageScreen(
                     .fillMaxWidth()
                     .statusBarsPadding(),
                 color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 Row(
                     modifier = Modifier
@@ -160,7 +160,7 @@ fun EditMessageScreen(
                     .navigationBarsPadding()
                     .imePadding(),
                 color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 Row(
                     modifier = Modifier
@@ -174,7 +174,7 @@ fun EditMessageScreen(
                         onValueChange = { searchValue = it },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(8.dp),
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Search,
@@ -273,7 +273,7 @@ fun EditMessageScreen(
                 value = value,
                 onValueChange = { value = it },
                 modifier = Modifier.fillMaxSize(),
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(8.dp),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.outline,

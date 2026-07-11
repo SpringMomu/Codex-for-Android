@@ -9,10 +9,17 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -54,25 +61,33 @@ import androidx.compose.material.icons.automirrored.rounded.AltRoute
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Autorenew
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -147,6 +162,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import kotlin.math.abs
+import kotlin.math.sin
 
 @Composable
 fun ChatRoute(
@@ -496,111 +512,139 @@ private fun ChatScreen(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
         bottomBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (selectedImagePaths.isNotEmpty()) {
-                    SelectedImagesRow(
-                        imagePaths = selectedImagePaths,
-                        onRemove = onRemoveSelectedImage,
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(22.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)),
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 920.dp)
+                        .align(Alignment.Center)
+                        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 6.dp, end = 6.dp, top = 3.dp, bottom = 3.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    if (selectedImagePaths.isNotEmpty()) {
+                        SelectedImagesRow(
+                            imagePaths = selectedImagePaths,
+                            onRemove = onRemoveSelectedImage,
+                        )
+                    }
+                    val canSubmit = draft.isNotBlank() || selectedImagePaths.isNotEmpty()
+                    val sendContainerColor by animateColorAsState(
+                        targetValue = when {
+                            uiState.isSending -> MaterialTheme.colorScheme.surfaceVariant
+                            canSubmit -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        animationSpec = tween(durationMillis = 160),
+                        label = "composer-action-color",
+                    )
+                    Surface(
+                        modifier = Modifier.animateContentSize(
+                            animationSpec = tween(durationMillis = 180),
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        shadowElevation = 2.dp,
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                        ) {
-                            IconButton(
-                                onClick = { showImageSourceDialog = true },
+                        Column {
+                            ChatModelSelector(
+                                models = uiState.availableModels,
+                                selectedModel = uiState.modelAlias,
+                                placeholder = modelPlaceholder,
                                 enabled = !uiState.isSending,
-                                modifier = Modifier.size(34.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Image,
-                                    contentDescription = stringResource(R.string.add_image),
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(15.dp),
-                                )
-                            }
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 34.dp)
-                                .padding(horizontal = 2.dp),
-                            contentAlignment = Alignment.CenterStart,
-                        ) {
-                            BasicTextField(
-                                value = draft,
-                                onValueChange = onDraftChange,
+                                onSelectModel = onSelectModel,
                                 modifier = Modifier.fillMaxWidth(),
-                                textStyle = MaterialTheme.typography.bodyMedium.merge(
-                                    TextStyle(color = MaterialTheme.colorScheme.onSurface),
-                                ),
-                                minLines = 1,
-                                maxLines = 4,
-                                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                             )
-                        }
-                        Surface(
-                            shape = CircleShape,
-                            color = if (uiState.isSending) {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            },
-                        ) {
-                            IconButton(
-                                onClick = if (uiState.isSending) onStopStreaming else onSend,
-                                enabled = uiState.isSending || draft.isNotBlank() || selectedImagePaths.isNotEmpty(),
-                                modifier = Modifier.size(34.dp),
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(
-                                    imageVector = if (uiState.isSending) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
-                                    contentDescription = stringResource(
-                                        if (uiState.isSending) R.string.stop_generation else R.string.send,
+                                IconButton(
+                                    onClick = { showImageSourceDialog = true },
+                                    enabled = !uiState.isSending,
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Image,
+                                        contentDescription = stringResource(R.string.add_image),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(19.dp),
+                                    )
+                                }
+                                BasicTextField(
+                                    value = draft,
+                                    onValueChange = onDraftChange,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 40.dp)
+                                        .padding(vertical = 9.dp),
+                                    textStyle = MaterialTheme.typography.bodyLarge.merge(
+                                        TextStyle(color = MaterialTheme.colorScheme.onSurface),
                                     ),
-                                    tint = if (uiState.isSending) {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    } else {
-                                        MaterialTheme.colorScheme.onPrimary
+                                    minLines = 1,
+                                    maxLines = 5,
+                                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                                    decorationBox = { innerTextField ->
+                                        Box(contentAlignment = Alignment.CenterStart) {
+                                            if (draft.isEmpty()) {
+                                                Text(
+                                                    text = stringResource(R.string.chat_input_placeholder),
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                )
+                                            }
+                                            innerTextField()
+                                        }
                                     },
-                                    modifier = Modifier.size(15.dp),
                                 )
+                                Surface(
+                                    shape = CircleShape,
+                                    color = sendContainerColor,
+                                ) {
+                                    IconButton(
+                                        onClick = if (uiState.isSending) onStopStreaming else onSend,
+                                        enabled = uiState.isSending || canSubmit,
+                                        modifier = Modifier.size(40.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = if (uiState.isSending) {
+                                                Icons.Rounded.Stop
+                                            } else {
+                                                Icons.AutoMirrored.Rounded.Send
+                                            },
+                                            contentDescription = stringResource(
+                                                if (uiState.isSending) R.string.stop_generation else R.string.send,
+                                            ),
+                                            tint = if (uiState.isSending || !canSubmit) {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            } else {
+                                                MaterialTheme.colorScheme.onPrimary
+                                            },
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
-                ChatModelSelector(
-                    models = uiState.availableModels,
-                    selectedModel = uiState.modelAlias,
-                    placeholder = modelPlaceholder,
-                    enabled = !uiState.isSending,
-                    onSelectModel = onSelectModel,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         },
 ) { innerPadding ->
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(innerPadding)
-            .padding(horizontal = 16.dp),
+            .padding(innerPadding),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 920.dp)
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 16.dp),
         ) {
             ChatHeader(
                 title = providerTitle,
@@ -619,8 +663,8 @@ private fun ChatScreen(
             )
             AnimatedVisibility(
                 visible = isSearchMode,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
+                enter = fadeIn(tween(140)) + expandVertically(tween(180)),
+                exit = fadeOut(tween(120)) + shrinkVertically(tween(160)),
             ) {
                 ConversationSearchBar(
                     query = searchQuery,
@@ -741,6 +785,9 @@ private fun ChatScreen(
                                 },
                                 onRetry = { onRetryMessage(message.id) },
                                 onLongPress = { actionMessage = message },
+                                modifier = Modifier.padding(
+                                    end = if (message.role == MessageRole.USER) 0.dp else 48.dp,
+                                ),
                             )
                         }
                         if (uiState.streamingMessageId != null) {
@@ -751,58 +798,63 @@ private fun ChatScreen(
                     }
 
                     if (uiState.messages.isNotEmpty()) {
-                        QuickScrollControls(
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .padding(end = 2.dp, bottom = 28.dp),
-                            canScrollUp = listState.firstVisibleItemIndex > 0 ||
-                                listState.firstVisibleItemScrollOffset > 0,
-                            canScrollDown = listState.canScrollForward,
-                            onScrollUp = {
-                                val target = previousMessageIndex(
-                                    listState = listState,
-                                    items = conversationItems,
-                                )
-                                coroutineScope.launch {
-                                    listState.animateScrollToItem(target ?: 0)
-                                }
-                            },
-                            onLongScrollUp = {
-                                coroutineScope.launch {
-                                    listState.scrollToItem(0)
-                                }
-                            },
-                            onScrollDown = {
-                                val target = nextMessageIndex(
-                                    listState = listState,
-                                    items = conversationItems,
-                                )
-                                coroutineScope.launch {
-                                    if (target != null) {
-                                        listState.animateScrollToItem(target)
-                                    } else {
+                        val canScrollUp = listState.firstVisibleItemIndex > 0 ||
+                            listState.firstVisibleItemScrollOffset > 0
+                        val canScrollDown = listState.canScrollForward
+                        if (canScrollUp || canScrollDown) {
+                            QuickScrollControls(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .padding(end = 2.dp, bottom = 28.dp),
+                                canScrollUp = canScrollUp,
+                                canScrollDown = canScrollDown,
+                                onScrollUp = {
+                                    val target = previousMessageIndex(
+                                        listState = listState,
+                                        items = conversationItems,
+                                    )
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(target ?: 0)
+                                    }
+                                },
+                                onLongScrollUp = {
+                                    coroutineScope.launch {
+                                        listState.scrollToItem(0)
+                                    }
+                                },
+                                onScrollDown = {
+                                    val target = nextMessageIndex(
+                                        listState = listState,
+                                        items = conversationItems,
+                                    )
+                                    coroutineScope.launch {
+                                        if (target != null) {
+                                            listState.animateScrollToItem(target)
+                                        } else {
+                                            scrollToConversationBottom(
+                                                listState = listState,
+                                                lastMessageIndex = conversationItems.lastIndex,
+                                                animated = true,
+                                            )
+                                        }
+                                    }
+                                },
+                                onLongScrollDown = {
+                                    coroutineScope.launch {
                                         scrollToConversationBottom(
                                             listState = listState,
                                             lastMessageIndex = conversationItems.lastIndex,
-                                            animated = true,
+                                            animated = false,
                                         )
                                     }
-                                }
-                            },
-                            onLongScrollDown = {
-                                coroutineScope.launch {
-                                    scrollToConversationBottom(
-                                        listState = listState,
-                                        lastMessageIndex = conversationItems.lastIndex,
-                                        animated = false,
-                                    )
-                                }
-                            },
-                        )
+                                },
+                            )
+                        }
                     }
                 }
             }
         }
+    }
     }
 
     actionMessage?.let { message ->
@@ -919,26 +971,37 @@ private fun ChatHeader(
     onNewConversation: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var moreMenuExpanded by remember { mutableStateOf(false) }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 2.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        HeaderActionButton(
+            icon = Icons.Rounded.Menu,
+            contentDescription = stringResource(R.string.open_history),
+            onClick = onOpenHistory,
+        )
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = modelName,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         HeaderActionButton(
@@ -947,26 +1010,45 @@ private fun ChatHeader(
             onClick = onOpenSearch,
             active = isSearchMode,
         )
-        HeaderActionButton(
-            icon = Icons.Rounded.Image,
-            contentDescription = stringResource(R.string.image_mode_title),
-            onClick = onOpenImageMode,
-        )
-        HeaderActionButton(
-            icon = Icons.Rounded.History,
-            contentDescription = stringResource(R.string.open_history),
-            onClick = onOpenHistory,
-        )
-        HeaderActionButton(
-            icon = Icons.Rounded.Settings,
-            contentDescription = stringResource(R.string.open_settings),
-            onClick = onOpenSettings,
-        )
-        HeaderActionButton(
-            icon = Icons.Rounded.Add,
-            contentDescription = stringResource(R.string.start_new_conversation),
-            onClick = onNewConversation,
-        )
+        Box {
+            HeaderActionButton(
+                icon = Icons.Rounded.MoreVert,
+                contentDescription = stringResource(R.string.more_actions),
+                onClick = { moreMenuExpanded = true },
+            )
+            DropdownMenu(
+                expanded = moreMenuExpanded,
+                onDismissRequest = { moreMenuExpanded = false },
+                shape = MaterialTheme.shapes.medium,
+                containerColor = MaterialTheme.colorScheme.surface,
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.start_new_conversation)) },
+                    leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                    onClick = {
+                        moreMenuExpanded = false
+                        onNewConversation()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.image_mode_title)) },
+                    leadingIcon = { Icon(Icons.Rounded.Image, contentDescription = null) },
+                    onClick = {
+                        moreMenuExpanded = false
+                        onOpenImageMode()
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.open_settings)) },
+                    leadingIcon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                    onClick = {
+                        moreMenuExpanded = false
+                        onOpenSettings()
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -987,58 +1069,95 @@ private fun ChatModelSelector(
             .distinct()
             .toList()
     }
+    var expanded by remember { mutableStateOf(false) }
+    val displayModel = selectedModel.ifBlank { placeholder }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(durationMillis = 160),
+        label = "model-selector-arrow",
+    )
 
-    if (visibleModels.isEmpty()) {
-        Text(
-            text = placeholder,
-            modifier = modifier.padding(horizontal = 4.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelMedium,
-        )
-        return
-    }
-
-    LazyRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 2.dp),
-    ) {
-        items(visibleModels, key = { it }) { modelAlias ->
-            val selected = modelAlias == selectedModel
-            Surface(
-                modifier = Modifier
-                    .heightIn(min = 32.dp)
-                    .widthIn(max = 220.dp)
-                    .clickable(
-                        enabled = enabled && !selected,
-                        onClick = { onSelectModel(modelAlias) },
-                    ),
-                shape = RoundedCornerShape(16.dp),
-                color = if (selected) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                } else {
-                    MaterialTheme.colorScheme.surface
-                },
-                border = BorderStroke(
-                    width = 1.dp,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
-                    },
+    Box(modifier = modifier) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    enabled = enabled && visibleModels.isNotEmpty(),
+                    onClick = { expanded = true },
                 ),
+            shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp),
+            color = Color.Transparent,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                Spacer(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .background(
+                            color = if (visibleModels.isEmpty()) {
+                                MaterialTheme.colorScheme.outline
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            shape = CircleShape,
+                        ),
+                )
                 Text(
-                    text = modelAlias,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
+                    text = displayModel,
+                    modifier = Modifier.weight(1f),
+                    color = if (visibleModels.isEmpty()) {
                         MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
                     },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = MaterialTheme.shapes.medium,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            visibleModels.forEach { modelAlias ->
+                val selected = modelAlias == selectedModel
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = modelAlias,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    leadingIcon = {
+                        if (selected) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.size(24.dp))
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelectModel(modelAlias)
+                    },
                 )
             }
         }
@@ -1053,16 +1172,16 @@ private fun HeaderActionButton(
     active: Boolean = false,
 ) {
     Surface(
-        shape = CircleShape,
+        shape = RoundedCornerShape(8.dp),
         color = if (active) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+            MaterialTheme.colorScheme.primaryContainer
         } else {
             Color.Transparent
         },
     ) {
         IconButton(
             onClick = onClick,
-            modifier = Modifier.size(38.dp),
+            modifier = Modifier.size(40.dp),
         ) {
             Icon(
                 imageVector = icon,
@@ -1072,7 +1191,7 @@ private fun HeaderActionButton(
                 } else {
                     MaterialTheme.colorScheme.onBackground
                 },
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(19.dp),
             )
         }
     }
@@ -1091,14 +1210,14 @@ private fun ConversationSearchBar(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
@@ -1111,7 +1230,7 @@ private fun ConversationSearchBar(
                     onValueChange = onQueryChange,
                     modifier = Modifier.weight(1f),
                     singleLine = true,
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(8.dp),
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Rounded.Search,
@@ -1245,11 +1364,11 @@ private fun QuickScrollButton(
         } else {
             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
         },
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)),
-        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 1.dp,
     ) {
         Box(
-            modifier = Modifier.size(34.dp),
+            modifier = Modifier.size(38.dp),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -1260,7 +1379,7 @@ private fun QuickScrollButton(
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(17.dp),
             )
         }
     }
@@ -1270,54 +1389,27 @@ private fun QuickScrollButton(
 private fun EmptyChatState(
     modifier: Modifier = Modifier,
 ) {
-    val title = stringResource(R.string.empty_chat_title)
-    var visibleLength by remember(title) { mutableStateOf(0) }
+    var visible by remember { mutableStateOf(false) }
 
-    LaunchedEffect(title) {
-        visibleLength = 0
-        title.forEachIndexed { index, _ ->
-            visibleLength = index + 1
-            kotlinx.coroutines.delay(88)
-        }
-    }
-
-    val transition = rememberInfiniteTransition(label = "empty-state-cursor")
-    val cursorAlpha by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = androidx.compose.animation.core.keyframes {
-                durationMillis = 960
-                1f at 0
-                1f at 480
-                0f at 481
-                0f at 960
-            },
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "empty-state-cursor-alpha",
-    )
+    LaunchedEffect(Unit) { visible = true }
 
     Column(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(300)) + slideInVertically(
+                animationSpec = tween(360),
+                initialOffsetY = { it / 8 },
+            ),
         ) {
             Text(
-                text = title.take(visibleLength),
+                text = stringResource(R.string.empty_chat_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground,
-            )
-            Box(
-                modifier = Modifier
-                    .size(width = 10.dp, height = 24.dp)
-                    .graphicsLayer { alpha = cursorAlpha }
-                    .background(MaterialTheme.colorScheme.onBackground, RoundedCornerShape(2.dp)),
             )
         }
     }
@@ -1465,12 +1557,14 @@ private fun MessageBubble(
     onActiveSearchTargetPositioned: (Float) -> Unit,
     onRetry: () -> Unit,
     onLongPress: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val isAssistant = message.role == MessageRole.ASSISTANT
+    val isUser = message.role == MessageRole.USER
     val background = when {
         message.isError -> MaterialTheme.colorScheme.errorContainer
-        message.role == MessageRole.USER -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-        isAssistant -> MaterialTheme.colorScheme.surface
+        message.role == MessageRole.USER -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+        isAssistant -> Color.Transparent
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
     val contentColor = when {
@@ -1479,113 +1573,132 @@ private fun MessageBubble(
     }
     val borderColor = when {
         message.isError -> MaterialTheme.colorScheme.error.copy(alpha = 0.24f)
-        message.role == MessageRole.USER -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)
+        message.role == MessageRole.USER -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        else -> MaterialTheme.colorScheme.outlineVariant
     }
+    val assistantReadingSurface = isAssistant && !message.isError
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = background),
-            shape = RoundedCornerShape(
-                topStart = if (isFirstChunk) 24.dp else 0.dp,
-                topEnd = if (isFirstChunk) 24.dp else 0.dp,
-                bottomStart = if (isLastChunk) {
-                    if (isAssistant) 10.dp else 24.dp
-                } else {
-                    0.dp
-                },
-                bottomEnd = if (isLastChunk) {
-                    if (isAssistant) 24.dp else 10.dp
-                } else {
-                    0.dp
-                },
-            ),
-            border = BorderStroke(1.dp, borderColor),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (isUser) Modifier.padding(start = 40.dp) else Modifier),
+            horizontalArrangement = if (isUser) {
+                Arrangement.End
+            } else {
+                Arrangement.Start
+            },
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
+            Surface(
+                modifier = if (isUser) {
+                    Modifier.widthIn(max = 620.dp)
+                } else {
+                    Modifier.fillMaxWidth()
+                },
+                color = background,
+                shape = if (assistantReadingSurface) {
+                    RoundedCornerShape(0.dp)
+                } else {
+                    RoundedCornerShape(
+                        topStart = if (isFirstChunk) 14.dp else 0.dp,
+                        topEnd = if (isFirstChunk) 14.dp else 0.dp,
+                        bottomStart = if (isLastChunk) 14.dp else 0.dp,
+                        bottomEnd = if (isLastChunk) 5.dp else 0.dp,
+                    )
+                },
+                border = if (assistantReadingSurface) null else BorderStroke(1.dp, borderColor),
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            start = 16.dp,
-                            end = 16.dp,
-                            top = if (isFirstChunk) 16.dp else 12.dp,
-                        ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = if (isUser) Modifier else Modifier.fillMaxWidth(),
                 ) {
-                    if (isFirstChunk && message.activityLog.isNotEmpty()) {
-                        ActivityTimeline(message.activityLog)
-                    }
-                    if (isFirstChunk && message.reasoningSummary.isNotBlank()) {
-                        ReasoningSummarySection(
-                            messageId = message.id,
-                            summary = message.reasoningSummary,
-                            contentColor = contentColor,
-                            highlightQuery = reasoningSearchQuery,
-                            activeOccurrenceIndex = activeReasoningOccurrenceIndex,
-                            forceExpanded = forceExpandReasoning,
-                            onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
-                            onLongPress = onLongPress,
-                        )
-                    }
-                    if (isFirstChunk && message.imagePaths.isNotEmpty()) {
-                        MessageImagesRow(
-                            imagePaths = message.imagePaths,
-                            onLongPress = onLongPress,
-                        )
-                    }
-                    if (content.isNotBlank()) {
-                        MessageBody(
-                            content = content,
-                            renderAsMarkdown = renderContentAsMarkdown,
-                            isStreaming = isStreaming,
-                            contentColor = contentColor,
-                            highlightQuery = contentSearchQuery,
-                            activeOccurrenceIndex = activeContentOccurrenceIndex,
-                            onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
-                            onLongPress = onLongPress,
-                        )
-                    }
-                }
-                if (isLastChunk) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .noHapticPressGesture(onLongPress = onLongPress)
-                            .padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = formatTimestamp(message.createdAt),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = contentColor.copy(alpha = 0.56f),
-                        )
-                        if (canRetry) {
-                            Surface(
-                                shape = RoundedCornerShape(999.dp),
-                                color = if (message.isError) {
-                                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+                    Column(
+                        modifier = (if (isUser) Modifier else Modifier.fillMaxWidth())
+                            .padding(
+                                start = if (assistantReadingSurface) 0.dp else 14.dp,
+                                end = if (assistantReadingSurface) 12.dp else 14.dp,
+                                top = if (isFirstChunk) {
+                                    if (assistantReadingSurface) 8.dp else 13.dp
                                 } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                                    10.dp
                                 },
-                            ) {
-                                TextButton(
-                                    onClick = onRetry,
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (isFirstChunk && message.activityLog.isNotEmpty()) {
+                            ActivityTimeline(message.activityLog)
+                        }
+                        if (isFirstChunk && message.reasoningSummary.isNotBlank()) {
+                            ReasoningSummarySection(
+                                messageId = message.id,
+                                summary = message.reasoningSummary,
+                                contentColor = contentColor,
+                                highlightQuery = reasoningSearchQuery,
+                                activeOccurrenceIndex = activeReasoningOccurrenceIndex,
+                                forceExpanded = forceExpandReasoning,
+                                onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
+                                onLongPress = onLongPress,
+                            )
+                        }
+                        if (isFirstChunk && message.imagePaths.isNotEmpty()) {
+                            MessageImagesRow(
+                                imagePaths = message.imagePaths,
+                                onLongPress = onLongPress,
+                            )
+                        }
+                        if (content.isNotBlank()) {
+                            MessageBody(
+                                content = content,
+                                renderAsMarkdown = renderContentAsMarkdown,
+                                isStreaming = isStreaming,
+                                fillWidth = !isUser,
+                                contentColor = contentColor,
+                                highlightQuery = contentSearchQuery,
+                                activeOccurrenceIndex = activeContentOccurrenceIndex,
+                                onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
+                                onLongPress = onLongPress,
+                            )
+                        }
+                    }
+                    if (isLastChunk) {
+                        Row(
+                            modifier = (if (isUser) Modifier else Modifier.fillMaxWidth())
+                                .noHapticPressGesture(onLongPress = onLongPress)
+                                .padding(
+                                    start = if (assistantReadingSurface) 0.dp else 14.dp,
+                                    end = if (assistantReadingSurface) 4.dp else 10.dp,
+                                    top = 9.dp,
+                                    bottom = if (assistantReadingSurface) 4.dp else 10.dp,
+                                ),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = formatTimestamp(message.createdAt),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = contentColor.copy(alpha = 0.52f),
+                            )
+                            if (canRetry) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (message.isError) {
+                                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                                    },
                                 ) {
-                                    Text(
-                                        text = stringResource(R.string.retry),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = contentColor,
-                                    )
+                                    TextButton(
+                                        onClick = onRetry,
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.retry),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = contentColor,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1594,7 +1707,7 @@ private fun MessageBubble(
             }
         }
         if (isLastChunk) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(if (isAssistant) 18.dp else 14.dp))
         }
     }
 }
@@ -1653,6 +1766,7 @@ private fun MessageBody(
     content: String,
     renderAsMarkdown: Boolean,
     isStreaming: Boolean,
+    fillWidth: Boolean,
     contentColor: Color,
     highlightQuery: String,
     activeOccurrenceIndex: Int?,
@@ -1682,6 +1796,7 @@ private fun MessageBody(
     } else {
         PlainMessageText(
             text = content,
+            fillWidth = fillWidth,
             contentColor = contentColor,
             highlightQuery = highlightQuery,
             activeOccurrenceIndex = activeOccurrenceIndex,
@@ -1694,6 +1809,7 @@ private fun MessageBody(
 @Composable
 private fun PlainMessageText(
     text: String,
+    fillWidth: Boolean,
     contentColor: Color,
     highlightQuery: String,
     activeOccurrenceIndex: Int?,
@@ -1714,8 +1830,7 @@ private fun PlainMessageText(
     }
     Text(
         text = displayText,
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .noHapticPressGesture(onLongPress = onLongPress)
             .onGloballyPositioned { coordinates ->
                 if (highlightQuery.isNotBlank() && activeOccurrenceIndex != null) {
@@ -1821,61 +1936,36 @@ private fun ActivityTimeline(
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        displayActivityLog.forEachIndexed { index, activity ->
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.9f)),
+        displayActivityLog.forEach { activity ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
+                Spacer(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Surface(
+                        .size(8.dp)
+                        .background(
+                            color = if (activity.status == "running") {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.secondary
+                            },
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surface,
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "${index + 1}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f),
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
-                        }
-                        Text(
-                            text = activityLabel(activity),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Medium,
-                            ),
-                        )
-                    }
-                    if (activity.status == "running") {
-                        InlineActivityDots()
-                    } else {
-                        Spacer(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .background(
-                                    color = MaterialTheme.colorScheme.outline,
-                                    shape = CircleShape,
-                                ),
-                        )
-                    }
+                        ),
+                )
+                Text(
+                    text = activityLabel(activity),
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                if (activity.status == "running") {
+                    InlineActivityDots()
                 }
             }
         }
@@ -1932,14 +2022,13 @@ private fun ReasoningSummarySection(
     }
 
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.66f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.88f)),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
@@ -1952,11 +2041,21 @@ private fun ReasoningSummarySection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = stringResource(R.string.reasoning_summary),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Spacer(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(MaterialTheme.colorScheme.secondary, CircleShape),
+                    )
+                    Text(
+                        text = stringResource(R.string.reasoning_summary),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Icon(
                     imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                     contentDescription = stringResource(
@@ -1967,8 +2066,8 @@ private fun ReasoningSummarySection(
             }
             AnimatedVisibility(
                 visible = expanded,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
+                enter = fadeIn(tween(140)) + expandVertically(tween(180)),
+                exit = fadeOut(tween(120)) + shrinkVertically(tween(160)),
             ) {
                 MarkdownText(
                     markdown = summary,
@@ -2114,7 +2213,7 @@ private fun AttachmentThumbnail(
             }
             else -> modifier
         },
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
@@ -2187,7 +2286,7 @@ private fun ImagePreviewDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.94f), RoundedCornerShape(20.dp))
+                .background(Color.Black.copy(alpha = 0.96f))
                 .padding(12.dp)
                 .onSizeChanged { containerSize = it }
                 .pointerInput(path) {
@@ -2369,52 +2468,53 @@ private suspend fun scrollToConversationBottom(
 
 @Composable
 private fun TypingIndicatorBubble() {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(22.dp),
+    val transition = rememberInfiniteTransition(label = "reply-loading")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (Math.PI * 2).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1_100, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "reply-loading-phase",
+    )
+    val barHeights = remember { listOf(9.dp, 15.dp, 12.dp, 17.dp) }
+
+    Row(
+        modifier = Modifier.padding(start = 2.dp, end = 48.dp, top = 10.dp, bottom = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.height(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val transition = rememberInfiniteTransition(label = "typing")
-            repeat(3) { index ->
-                val alpha by transition.animateFloat(
-                    initialValue = 0.35f,
-                    targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 480, delayMillis = index * 120),
-                        repeatMode = RepeatMode.Reverse,
-                    ),
-                    label = "typing-alpha-$index",
-                )
-                val translateY by transition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = -8f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 480, delayMillis = index * 120),
-                        repeatMode = RepeatMode.Reverse,
-                    ),
-                    label = "typing-offset-$index",
-                )
+            barHeights.forEachIndexed { index, barHeight ->
+                val wave = ((sin(phase - index * 0.82f) + 1f) / 2f)
                 Spacer(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(width = 3.dp, height = barHeight)
                         .graphicsLayer {
-                            this.alpha = alpha
-                            translationY = translateY
+                            scaleY = 0.38f + wave * 0.62f
+                            alpha = 0.48f + wave * 0.52f
                         }
                         .background(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.secondary,
                             shape = CircleShape,
                         ),
                 )
             }
         }
+        Text(
+            text = stringResource(R.string.chat_reply_loading),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
+        )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MessageActionDialog(
     message: ChatMessage,
@@ -2426,68 +2526,76 @@ private fun MessageActionDialog(
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(24.dp),
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.outline)
+        },
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Text(
-                    text = stringResource(
-                        if (message.role == MessageRole.ASSISTANT) {
-                            R.string.message_action_title_assistant
-                        } else {
-                            R.string.message_action_title_user
-                        },
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = stringResource(R.string.message_action_hint),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                MessageActionButton(
-                    icon = Icons.Rounded.Autorenew,
-                    text = stringResource(
-                        if (message.role == MessageRole.ASSISTANT) {
-                            R.string.message_regenerate_reply
-                        } else {
-                            R.string.message_generate_reply
-                        },
-                    ),
-                    onClick = onGenerateReply,
-                    enabled = canGenerateReply,
-                )
-                MessageActionButton(
-                    icon = Icons.Rounded.ContentCopy,
-                    text = stringResource(R.string.copy),
-                    onClick = onCopy,
-                )
-                MessageActionButton(
-                    icon = Icons.AutoMirrored.Rounded.AltRoute,
-                    text = stringResource(R.string.message_branch),
-                    onClick = onBranch,
-                )
-                MessageActionButton(
-                    icon = Icons.Rounded.Edit,
-                    text = stringResource(R.string.edit),
-                    onClick = onEdit,
-                )
-                MessageActionButton(
-                    icon = Icons.Rounded.DeleteOutline,
-                    text = stringResource(R.string.delete),
-                    onClick = onDelete,
-                )
-                MessageActionButton(
-                    icon = Icons.Rounded.Close,
-                    text = stringResource(R.string.cancel),
-                    onClick = onDismiss,
-                )
-            }
+            Text(
+                text = stringResource(
+                    if (message.role == MessageRole.ASSISTANT) {
+                        R.string.message_action_title_assistant
+                    } else {
+                        R.string.message_action_title_user
+                    },
+                ),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.message_action_hint),
+                modifier = Modifier.padding(bottom = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            MessageActionButton(
+                icon = Icons.Rounded.Autorenew,
+                text = stringResource(
+                    if (message.role == MessageRole.ASSISTANT) {
+                        R.string.message_regenerate_reply
+                    } else {
+                        R.string.message_generate_reply
+                    },
+                ),
+                onClick = onGenerateReply,
+                enabled = canGenerateReply,
+            )
+            MessageActionButton(
+                icon = Icons.Rounded.ContentCopy,
+                text = stringResource(R.string.copy),
+                onClick = onCopy,
+            )
+            MessageActionButton(
+                icon = Icons.AutoMirrored.Rounded.AltRoute,
+                text = stringResource(R.string.message_branch),
+                onClick = onBranch,
+            )
+            MessageActionButton(
+                icon = Icons.Rounded.Edit,
+                text = stringResource(R.string.edit),
+                onClick = onEdit,
+            )
+            MessageActionButton(
+                icon = Icons.Rounded.DeleteOutline,
+                text = stringResource(R.string.delete),
+                onClick = onDelete,
+                destructive = true,
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            MessageActionButton(
+                icon = Icons.Rounded.Close,
+                text = stringResource(R.string.cancel),
+                onClick = onDismiss,
+            )
         }
     }
 }
@@ -2498,7 +2606,13 @@ private fun MessageActionButton(
     text: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
+    destructive: Boolean = false,
 ) {
+    val contentColor = if (destructive) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     TextButton(
         onClick = onClick,
         enabled = enabled,
@@ -2513,10 +2627,12 @@ private fun MessageActionButton(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
+                tint = contentColor,
             )
             Text(
                 text = text,
                 modifier = Modifier.weight(1f),
+                color = contentColor,
             )
         }
     }

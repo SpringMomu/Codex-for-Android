@@ -1,9 +1,17 @@
 package dev.codex.android.feature.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -24,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -32,14 +41,12 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -216,48 +223,46 @@ private fun SettingsScreen(
                         )
                     }
                 },
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    if (!uiState.isSaving) {
-                        onSave(currentSettings)
+                actions = {
+                    IconButton(
+                        onClick = { onSave(currentSettings) },
+                        enabled = hasUnsavedChanges && !uiState.isSaving,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = stringResource(
+                                if (uiState.isSaving) R.string.settings_saving else R.string.settings_save,
+                            ),
+                            tint = if (hasUnsavedChanges && !uiState.isSaving) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
                     }
                 },
-                containerColor = if (uiState.isSaving) {
-                    MaterialTheme.colorScheme.surfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-                contentColor = if (uiState.isSaving) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onPrimary
-                },
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Save,
-                    contentDescription = stringResource(
-                        if (uiState.isSaving) R.string.settings_saving else R.string.settings_save,
-                    ),
-                )
-            }
+            )
         },
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 720.dp)
+                    .align(Alignment.TopCenter)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
             uiState.lastSavedAt?.let { lastSavedAt ->
                 Text(
                     text = stringResource(R.string.settings_saved_at, formatTimestamp(lastSavedAt)),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
 
@@ -324,8 +329,9 @@ private fun SettingsScreen(
                 )
             }
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(8.dp),
             ) {
                 Column(
                     modifier = Modifier.padding(18.dp),
@@ -341,7 +347,8 @@ private fun SettingsScreen(
                     )
                 }
             }
-            Spacer(modifier = Modifier.heightIn(min = 88.dp))
+            Spacer(modifier = Modifier.heightIn(min = 28.dp))
+            }
         }
     }
 
@@ -519,8 +526,11 @@ private fun ChatProviderField(
     onClaudeKeyVisibleChange: (Boolean) -> Unit,
 ) {
     Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = tween(180)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -632,8 +642,9 @@ private fun ChatModelsField(
     onDeleteModel: (ChatProvider, String) -> Unit,
 ) {
     Card(
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -732,7 +743,7 @@ private fun ChatModelChip(
             .heightIn(min = 34.dp)
             .widthIn(max = if (editable) 260.dp else 220.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(17.dp),
+        shape = RoundedCornerShape(8.dp),
         color = if (selected) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
         } else {
@@ -852,8 +863,9 @@ private fun ImageEndpointSettingsField(
     onImageKeyVisibleChange: (Boolean) -> Unit,
 ) {
     Card(
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -883,32 +895,46 @@ private fun ImageEndpointSettingsField(
                     contentDescription = null,
                 )
             }
-            if (expanded) {
-                OutlinedTextField(
-                    value = imageBaseUrl,
-                    onValueChange = onImageBaseUrlChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("https://api.openai.com") },
-                    leadingIcon = { Icon(imageVector = Icons.Rounded.Cloud, contentDescription = null) },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = imageApiKey,
-                    onValueChange = onImageApiKeyChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("sk-") },
-                    visualTransformation = if (imageKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    leadingIcon = { Icon(imageVector = Icons.Rounded.Key, contentDescription = null) },
-                    trailingIcon = {
-                        IconButton(onClick = { onImageKeyVisibleChange(!imageKeyVisible) }) {
-                            Icon(
-                                imageVector = if (imageKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                contentDescription = stringResource(if (imageKeyVisible) R.string.hide else R.string.show),
-                            )
-                        }
-                    },
-                    singleLine = true,
-                )
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(tween(140)) + expandVertically(tween(180)),
+                exit = fadeOut(tween(120)) + shrinkVertically(tween(160)),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = imageBaseUrl,
+                        onValueChange = onImageBaseUrlChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("https://api.openai.com") },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Cloud, contentDescription = null) },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = imageApiKey,
+                        onValueChange = onImageApiKeyChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("sk-") },
+                        visualTransformation = if (imageKeyVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Key, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { onImageKeyVisibleChange(!imageKeyVisible) }) {
+                                Icon(
+                                    imageVector = if (imageKeyVisible) {
+                                        Icons.Rounded.VisibilityOff
+                                    } else {
+                                        Icons.Rounded.Visibility
+                                    },
+                                    contentDescription = stringResource(if (imageKeyVisible) R.string.hide else R.string.show),
+                                )
+                            }
+                        },
+                        singleLine = true,
+                    )
+                }
             }
         }
     }
@@ -920,8 +946,9 @@ private fun LanguageField(
     onLanguageTagChange: (String) -> Unit,
 ) {
     Card(
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -957,8 +984,9 @@ private fun ReasoningEffortField(
     onSelectedIndexChange: (Int) -> Unit,
 ) {
     Card(
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -1111,8 +1139,9 @@ private fun SettingField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     Card(
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),

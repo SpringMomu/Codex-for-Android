@@ -8,6 +8,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -66,7 +67,7 @@ fun CodexApp(container: AppContainer) {
             val currentBackStackEntry by navController.currentBackStackEntryAsState()
             val isChatContentVisible = currentBackStackEntry?.destination?.route == TopLevelDestination.CHAT.route &&
                 drawerState.currentValue == DrawerValue.Closed
-            val drawerWidth = LocalConfiguration.current.screenWidthDp.dp * 0.75f
+            val drawerWidth = (LocalConfiguration.current.screenWidthDp.dp * 0.88f).coerceAtMost(380.dp)
             val activeStreams = container.chatStreamCoordinator.activeStreamsState
                 .collectAsStateWithLifecycle()
                 .value
@@ -108,6 +109,9 @@ fun CodexApp(container: AppContainer) {
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .width(drawerWidth),
+                            drawerShape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp),
+                            drawerContainerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+                            drawerTonalElevation = 0.dp,
                         ) {
                             HistorySidebarRoute(
                                 container = container,
