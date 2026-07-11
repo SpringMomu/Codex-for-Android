@@ -45,7 +45,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -134,8 +133,10 @@ import dev.codex.android.data.model.ChatMessage
 import dev.codex.android.data.model.ChatProvider
 import dev.codex.android.data.model.MessageRole
 import dev.codex.android.ui.format.formatTimestamp
+import dev.codex.android.ui.markdown.MarkdownChunk
 import dev.codex.android.ui.markdown.MarkdownText
 import dev.codex.android.ui.markdown.containsLikelyLatex
+import dev.codex.android.ui.markdown.splitMarkdownChunks
 import dev.codex.android.ui.theme.Mist
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -234,6 +235,12 @@ private fun ChatScreen(
     var lastSearchQuery by rememberSaveable(uiState.activeConversationId) { mutableStateOf("") }
     var searchViewport by remember { mutableStateOf<SearchViewport?>(null) }
     var activeSearchTargetCenterY by remember { mutableStateOf<Float?>(null) }
+    val conversationItems = remember(uiState.messages, uiState.streamingMessageId) {
+        buildConversationListItems(
+            messages = uiState.messages,
+            streamingMessageId = uiState.streamingMessageId,
+        )
+    }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10),
     ) { uris ->
@@ -253,38 +260,54 @@ private fun ChatScreen(
         }
     }
 
-    LaunchedEffect(uiState.activeConversationId, uiState.messages, uiState.savedScrollPosition) {
-        if (hasRestoredScroll || uiState.messages.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(uiState.activeConversationId, conversationItems, uiState.savedScrollPosition) {
+        if (hasRestoredScroll || conversationItems.isEmpty()) return@LaunchedEffect
 
         val savedPosition = uiState.savedScrollPosition
+        val savedListIndexIsValid = savedPosition != null &&
+            conversationItems.getOrNull(savedPosition.firstVisibleItemIndex)?.message?.id ==
+            savedPosition.anchorMessageId
         val targetIndex = when {
+            savedListIndexIsValid -> savedPosition.firstVisibleItemIndex
             savedPosition?.anchorMessageId != null -> {
-                uiState.messages.indexOfFirst { it.id == savedPosition.anchorMessageId }
+                conversationItems.indexOfFirst { it.message.id == savedPosition.anchorMessageId }
                     .takeIf { it >= 0 }
             }
             savedPosition != null -> {
-                savedPosition.firstVisibleItemIndex.coerceIn(0, uiState.messages.lastIndex)
+                conversationItems.indexOfFirst {
+                    it.messageIndex == savedPosition.firstVisibleItemIndex.coerceIn(0, uiState.messages.lastIndex)
+                }.takeIf { it >= 0 }
             }
-            else -> uiState.messages.lastIndex
+            else -> conversationItems.lastIndex
         }
 
         withFrameNanos { }
         listState.scrollToItem(
-            index = targetIndex ?: uiState.messages.lastIndex,
-            scrollOffset = savedPosition?.firstVisibleItemScrollOffset?.coerceAtLeast(0) ?: 0,
+            index = targetIndex ?: conversationItems.lastIndex,
+            scrollOffset = if (savedListIndexIsValid) {
+                savedPosition?.firstVisibleItemScrollOffset?.coerceAtLeast(0) ?: 0
+            } else {
+                0
+            },
         )
         lastObservedMessageCount = uiState.messages.size
         hasRestoredScroll = true
     }
 
-    LaunchedEffect(uiState.activeConversationId, uiState.messages.size, uiState.streamingMessageId, hasRestoredScroll) {
+    LaunchedEffect(
+        uiState.activeConversationId,
+        uiState.messages.size,
+        uiState.streamingMessageId,
+        conversationItems.size,
+        hasRestoredScroll,
+    ) {
         if (!hasRestoredScroll) return@LaunchedEffect
 
         val currentCount = uiState.messages.size
         val previousCount = lastObservedMessageCount
         val hasNewMessages = currentCount > previousCount
         val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
-        val totalItemCount = currentCount + if (uiState.streamingMessageId != null) 1 else 0
+        val totalItemCount = conversationItems.size + if (uiState.streamingMessageId != null) 1 else 0
         val isNearBottom = totalItemCount == 0 || lastVisibleIndex >= totalItemCount - 2
 
         if (hasNewMessages && (previousCount == 0 || isNearBottom)) {
@@ -296,12 +319,12 @@ private fun ChatScreen(
     }
 
     @OptIn(FlowPreview::class)
-    LaunchedEffect(uiState.activeConversationId, uiState.messages) {
-        if (uiState.activeConversationId == null || uiState.messages.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(uiState.activeConversationId, conversationItems) {
+        if (uiState.activeConversationId == null || conversationItems.isEmpty()) return@LaunchedEffect
 
         snapshotFlow {
             Triple(
-                uiState.messages.getOrNull(listState.firstVisibleItemIndex)?.id,
+                conversationItems.getOrNull(listState.firstVisibleItemIndex)?.message?.id,
                 listState.firstVisibleItemIndex,
                 listState.firstVisibleItemScrollOffset,
             )
@@ -313,11 +336,11 @@ private fun ChatScreen(
             }
     }
 
-    DisposableEffect(uiState.activeConversationId, uiState.messages) {
+    DisposableEffect(uiState.activeConversationId, conversationItems) {
         onDispose {
-            if (uiState.activeConversationId != null && uiState.messages.isNotEmpty()) {
+            if (uiState.activeConversationId != null && conversationItems.isNotEmpty()) {
                 onPersistScrollPosition(
-                    uiState.messages.getOrNull(listState.firstVisibleItemIndex)?.id,
+                    conversationItems.getOrNull(listState.firstVisibleItemIndex)?.message?.id,
                     listState.firstVisibleItemIndex,
                     listState.firstVisibleItemScrollOffset,
                 )
@@ -345,6 +368,19 @@ private fun ChatScreen(
             .toSet()
     }
     val activeSearchMatch = searchMatches.getOrNull(currentSearchResultIndex)
+    val activeSearchListItemIndex = remember(
+        activeSearchMatch,
+        conversationItems,
+        effectiveSearchQuery,
+    ) {
+        activeSearchMatch?.let { match ->
+            findConversationListItemIndexForSearchMatch(
+                items = conversationItems,
+                match = match,
+                query = effectiveSearchQuery,
+            )
+        }
+    }
 
     LaunchedEffect(isSearchMode, effectiveSearchQuery, searchMatches) {
         if (!isSearchMode) return@LaunchedEffect
@@ -368,15 +404,17 @@ private fun ChatScreen(
         }
     }
 
-    LaunchedEffect(activeSearchMatch, currentSearchResultIndex, isSearchMode) {
-        if (!isSearchMode || activeSearchMatch == null) return@LaunchedEffect
+    LaunchedEffect(activeSearchMatch, activeSearchListItemIndex, currentSearchResultIndex, isSearchMode) {
+        if (!isSearchMode || activeSearchMatch == null || activeSearchListItemIndex == null) {
+            return@LaunchedEffect
+        }
 
         activeSearchTargetCenterY = null
         withFrameNanos { }
 
-        val isVisible = listState.layoutInfo.visibleItemsInfo.any { it.index == activeSearchMatch.messageIndex }
+        val isVisible = listState.layoutInfo.visibleItemsInfo.any { it.index == activeSearchListItemIndex }
         if (!isVisible) {
-            listState.scrollToItem(activeSearchMatch.messageIndex)
+            listState.scrollToItem(activeSearchListItemIndex)
             withFrameNanos { }
         }
 
@@ -400,7 +438,7 @@ private fun ChatScreen(
 
         val initialTargetCenterY = targetCenterY ?: resolveSearchTargetCenterInViewport(
             listState = listState,
-            messageIndex = activeSearchMatch.messageIndex,
+            messageIndex = activeSearchListItemIndex,
             searchViewport = viewport,
             activeSearchTargetCenterY = activeSearchTargetCenterY,
         ) ?: return@LaunchedEffect
@@ -434,7 +472,7 @@ private fun ChatScreen(
         val correctedViewport = searchViewport ?: viewport
         val correctedTargetCenterY = refinedTargetCenterY ?: resolveSearchTargetCenterInViewport(
             listState = listState,
-            messageIndex = activeSearchMatch.messageIndex,
+            messageIndex = activeSearchListItemIndex,
             searchViewport = correctedViewport,
             activeSearchTargetCenterY = activeSearchTargetCenterY,
         ) ?: return@LaunchedEffect
@@ -650,15 +688,19 @@ private fun ChatScreen(
                                     height = coordinates.size.height.toFloat(),
                                 )
                             },
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
                         contentPadding = PaddingValues(bottom = 18.dp),
                     ) {
-                        itemsIndexed(
-                            items = uiState.messages,
-                            key = { _, message -> message.id },
-                        ) { _, message ->
+                        items(
+                            items = conversationItems,
+                            key = { item -> item.key },
+                        ) { item ->
+                            val message = item.message
                             MessageBubble(
                                 message = message,
+                                content = item.content,
+                                renderContentAsMarkdown = item.renderContentAsMarkdown,
+                                isFirstChunk = item.isFirstChunk,
+                                isLastChunk = item.isLastChunk,
                                 isStreaming = uiState.streamingMessageId == message.id &&
                                     message.role == MessageRole.ASSISTANT,
                                 canRetry = message.isError &&
@@ -676,14 +718,22 @@ private fun ChatScreen(
                                         it.messageId == message.id &&
                                             it.section == SearchSection.CONTENT
                                     }
-                                    ?.occurrenceIndex,
+                                    ?.occurrenceIndex
+                                    ?.let { occurrenceIndex ->
+                                        item.localContentOccurrenceIndex(
+                                            query = effectiveSearchQuery,
+                                            occurrenceIndex = occurrenceIndex,
+                                        )
+                                    },
                                 activeReasoningOccurrenceIndex = activeSearchMatch
                                     ?.takeIf {
+                                        item.isFirstChunk &&
                                         it.messageId == message.id &&
                                             it.section == SearchSection.REASONING_SUMMARY
                                     }
                                     ?.occurrenceIndex,
                                 forceExpandReasoning = isSearchMode &&
+                                    item.isFirstChunk &&
                                     activeSearchMatch?.messageId == message.id &&
                                     activeSearchMatch?.section == SearchSection.REASONING_SUMMARY,
                                 onActiveSearchTargetPositioned = { centerY ->
@@ -711,7 +761,7 @@ private fun ChatScreen(
                             onScrollUp = {
                                 val target = previousMessageIndex(
                                     listState = listState,
-                                    messageCount = uiState.messages.size,
+                                    items = conversationItems,
                                 )
                                 coroutineScope.launch {
                                     listState.animateScrollToItem(target ?: 0)
@@ -725,7 +775,7 @@ private fun ChatScreen(
                             onScrollDown = {
                                 val target = nextMessageIndex(
                                     listState = listState,
-                                    messageCount = uiState.messages.size,
+                                    items = conversationItems,
                                 )
                                 coroutineScope.launch {
                                     if (target != null) {
@@ -733,7 +783,7 @@ private fun ChatScreen(
                                     } else {
                                         scrollToConversationBottom(
                                             listState = listState,
-                                            lastMessageIndex = uiState.messages.lastIndex,
+                                            lastMessageIndex = conversationItems.lastIndex,
                                             animated = true,
                                         )
                                     }
@@ -743,7 +793,7 @@ private fun ChatScreen(
                                 coroutineScope.launch {
                                     scrollToConversationBottom(
                                         listState = listState,
-                                        lastMessageIndex = (uiState.messages.size - 1).coerceAtLeast(0),
+                                        lastMessageIndex = conversationItems.lastIndex,
                                         animated = false,
                                     )
                                 }
@@ -1311,10 +1361,100 @@ private fun SelectedImagesRow(
     }
 }
 
+private data class ConversationListItem(
+    val message: ChatMessage,
+    val messageIndex: Int,
+    val contentChunks: List<MarkdownChunk>,
+    val chunkIndex: Int,
+    val renderContentAsMarkdown: Boolean,
+) {
+    val content: String = contentChunks[chunkIndex].markdown
+    val isFirstChunk: Boolean = chunkIndex == 0
+    val isLastChunk: Boolean = chunkIndex == contentChunks.lastIndex
+    val key: String = "message-${message.id}-chunk-$chunkIndex"
+
+    fun localContentOccurrenceIndex(
+        query: String,
+        occurrenceIndex: Int,
+    ): Int? {
+        if (query.isBlank()) return null
+
+        var consumedOccurrences = 0
+        for (index in 0 until chunkIndex) {
+            consumedOccurrences += findTextMatches(contentChunks[index].searchableText, query).size
+        }
+        val localOccurrenceIndex = occurrenceIndex - consumedOccurrences
+        val localOccurrenceCount = findTextMatches(contentChunks[chunkIndex].searchableText, query).size
+        return localOccurrenceIndex.takeIf { it in 0 until localOccurrenceCount }
+    }
+}
+
+private fun buildConversationListItems(
+    messages: List<ChatMessage>,
+    streamingMessageId: Long?,
+): List<ConversationListItem> = buildList {
+    messages.forEachIndexed { messageIndex, message ->
+        val renderAsMarkdown = shouldRenderWithMarkdown(message)
+        val splitChunks = if (
+            renderAsMarkdown &&
+            message.id != streamingMessageId &&
+            message.content.length >= MARKDOWN_VIRTUALIZATION_MIN_CHARS
+        ) {
+            splitMarkdownChunks(message.content)
+        } else {
+            emptyList()
+        }
+        val contentChunks = splitChunks.takeIf {
+            it.size >= MARKDOWN_VIRTUALIZATION_MIN_CHUNKS
+        } ?: listOf(
+            MarkdownChunk(
+                markdown = message.content,
+                searchableText = message.content,
+            ),
+        )
+
+        contentChunks.indices.forEach { chunkIndex ->
+            add(
+                ConversationListItem(
+                    message = message,
+                    messageIndex = messageIndex,
+                    contentChunks = contentChunks,
+                    chunkIndex = chunkIndex,
+                    renderContentAsMarkdown = renderAsMarkdown,
+                ),
+            )
+        }
+    }
+}
+
+private fun findConversationListItemIndexForSearchMatch(
+    items: List<ConversationListItem>,
+    match: ConversationSearchMatch,
+    query: String,
+): Int? {
+    val firstMessageItemIndex = items.indexOfFirst { it.message.id == match.messageId }
+        .takeIf { it >= 0 }
+        ?: return null
+    if (match.section == SearchSection.REASONING_SUMMARY) return firstMessageItemIndex
+
+    return items.indices.firstOrNull { index ->
+        val item = items[index]
+        item.message.id == match.messageId &&
+            item.localContentOccurrenceIndex(query, match.occurrenceIndex) != null
+    } ?: firstMessageItemIndex
+}
+
+private const val MARKDOWN_VIRTUALIZATION_MIN_CHARS = 5_000
+private const val MARKDOWN_VIRTUALIZATION_MIN_CHUNKS = 2
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
+    content: String,
+    renderContentAsMarkdown: Boolean,
+    isFirstChunk: Boolean,
+    isLastChunk: Boolean,
     isStreaming: Boolean,
     canRetry: Boolean,
     contentSearchQuery: String,
@@ -1348,15 +1488,21 @@ private fun MessageBubble(
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .noHapticPressGesture(onLongPress = onLongPress),
+            modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = background),
             shape = RoundedCornerShape(
-                topStart = 24.dp,
-                topEnd = 24.dp,
-                bottomStart = if (isAssistant) 10.dp else 24.dp,
-                bottomEnd = if (isAssistant) 24.dp else 10.dp,
+                topStart = if (isFirstChunk) 24.dp else 0.dp,
+                topEnd = if (isFirstChunk) 24.dp else 0.dp,
+                bottomStart = if (isLastChunk) {
+                    if (isAssistant) 10.dp else 24.dp
+                } else {
+                    0.dp
+                },
+                bottomEnd = if (isLastChunk) {
+                    if (isAssistant) 24.dp else 10.dp
+                } else {
+                    0.dp
+                },
             ),
             border = BorderStroke(1.dp, borderColor),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -1367,13 +1513,17 @@ private fun MessageBubble(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = if (isFirstChunk) 16.dp else 12.dp,
+                        ),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (message.activityLog.isNotEmpty()) {
+                    if (isFirstChunk && message.activityLog.isNotEmpty()) {
                         ActivityTimeline(message.activityLog)
                     }
-                    if (message.reasoningSummary.isNotBlank()) {
+                    if (isFirstChunk && message.reasoningSummary.isNotBlank()) {
                         ReasoningSummarySection(
                             messageId = message.id,
                             summary = message.reasoningSummary,
@@ -1385,15 +1535,16 @@ private fun MessageBubble(
                             onLongPress = onLongPress,
                         )
                     }
-                    if (message.imagePaths.isNotEmpty()) {
+                    if (isFirstChunk && message.imagePaths.isNotEmpty()) {
                         MessageImagesRow(
                             imagePaths = message.imagePaths,
                             onLongPress = onLongPress,
                         )
                     }
-                    if (message.content.isNotBlank()) {
+                    if (content.isNotBlank()) {
                         MessageBody(
-                            message = message,
+                            content = content,
+                            renderAsMarkdown = renderContentAsMarkdown,
                             isStreaming = isStreaming,
                             contentColor = contentColor,
                             highlightQuery = contentSearchQuery,
@@ -1403,41 +1554,47 @@ private fun MessageBubble(
                         )
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = formatTimestamp(message.createdAt),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = contentColor.copy(alpha = 0.56f),
-                    )
-                    if (canRetry) {
-                        Surface(
-                            shape = RoundedCornerShape(999.dp),
-                            color = if (message.isError) {
-                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
-                            },
-                        ) {
-                            TextButton(
-                                onClick = onRetry,
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                if (isLastChunk) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .noHapticPressGesture(onLongPress = onLongPress)
+                            .padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = formatTimestamp(message.createdAt),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = contentColor.copy(alpha = 0.56f),
+                        )
+                        if (canRetry) {
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = if (message.isError) {
+                                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                                },
                             ) {
-                                Text(
-                                    text = stringResource(R.string.retry),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = contentColor,
-                                )
+                                TextButton(
+                                    onClick = onRetry,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.retry),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = contentColor,
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+        if (isLastChunk) {
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -1493,7 +1650,8 @@ private fun findConversationMatches(
 
 @Composable
 private fun MessageBody(
-    message: ChatMessage,
+    content: String,
+    renderAsMarkdown: Boolean,
     isStreaming: Boolean,
     contentColor: Color,
     highlightQuery: String,
@@ -1503,7 +1661,7 @@ private fun MessageBody(
 ) {
     if (isStreaming) {
         StreamingMessageText(
-            text = message.content,
+            text = content,
             contentColor = contentColor,
             highlightQuery = highlightQuery,
             activeOccurrenceIndex = activeOccurrenceIndex,
@@ -1512,9 +1670,9 @@ private fun MessageBody(
         return
     }
 
-    if (shouldRenderWithMarkdown(message)) {
+    if (renderAsMarkdown) {
         MarkdownText(
-            markdown = message.content,
+            markdown = content,
             contentColor = contentColor,
             highlightQuery = highlightQuery,
             activeOccurrenceIndex = activeOccurrenceIndex,
@@ -1523,11 +1681,12 @@ private fun MessageBody(
         )
     } else {
         PlainMessageText(
-            text = message.content,
+            text = content,
             contentColor = contentColor,
             highlightQuery = highlightQuery,
             activeOccurrenceIndex = activeOccurrenceIndex,
             onActiveSearchTargetPositioned = onActiveSearchTargetPositioned,
+            onLongPress = onLongPress,
         )
     }
 }
@@ -1539,6 +1698,7 @@ private fun PlainMessageText(
     highlightQuery: String,
     activeOccurrenceIndex: Int?,
     onActiveSearchTargetPositioned: (Float) -> Unit,
+    onLongPress: () -> Unit,
 ) {
     val inactiveHighlightColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.88f)
     val activeHighlightColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.34f)
@@ -1556,6 +1716,7 @@ private fun PlainMessageText(
         text = displayText,
         modifier = Modifier
             .fillMaxWidth()
+            .noHapticPressGesture(onLongPress = onLongPress)
             .onGloballyPositioned { coordinates ->
                 if (highlightQuery.isNotBlank() && activeOccurrenceIndex != null) {
                     onActiveSearchTargetPositioned(
@@ -2137,26 +2298,31 @@ private fun Modifier.noHapticPressGesture(
 
 private fun previousMessageIndex(
     listState: LazyListState,
-    messageCount: Int,
+    items: List<ConversationListItem>,
 ): Int? {
-    if (messageCount == 0) return null
+    if (items.isEmpty()) return null
 
-    val currentIndex = listState.firstVisibleItemIndex.coerceIn(0, messageCount - 1)
-    return if (listState.firstVisibleItemScrollOffset > 0) {
-        currentIndex
-    } else {
-        (currentIndex - 1).takeIf { it >= 0 }
+    val currentListIndex = listState.firstVisibleItemIndex.coerceIn(items.indices)
+    val currentMessageIndex = items[currentListIndex].messageIndex
+    val currentMessageFirstListIndex = items.indexOfFirst { it.messageIndex == currentMessageIndex }
+    if (currentListIndex > currentMessageFirstListIndex || listState.firstVisibleItemScrollOffset > 0) {
+        return currentMessageFirstListIndex
     }
+
+    return items.indexOfFirst { it.messageIndex == currentMessageIndex - 1 }
+        .takeIf { it >= 0 }
 }
 
 private fun nextMessageIndex(
     listState: LazyListState,
-    messageCount: Int,
+    items: List<ConversationListItem>,
 ): Int? {
-    if (messageCount == 0) return null
+    if (items.isEmpty()) return null
 
-    val currentIndex = listState.firstVisibleItemIndex.coerceIn(0, messageCount - 1)
-    return (currentIndex + 1).takeIf { it < messageCount }
+    val currentListIndex = listState.firstVisibleItemIndex.coerceIn(items.indices)
+    val currentMessageIndex = items[currentListIndex].messageIndex
+    return items.indexOfFirst { it.messageIndex > currentMessageIndex }
+        .takeIf { it >= 0 }
 }
 
 private fun resolveSearchTargetCenterInViewport(

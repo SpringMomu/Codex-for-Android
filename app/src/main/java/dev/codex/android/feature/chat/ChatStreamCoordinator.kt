@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +22,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.Call
+import java.io.EOFException
+import java.io.IOException
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
 
 data class ActiveChatStream(
@@ -331,6 +336,7 @@ class ChatStreamCoordinator(
                 }
                 if (shouldAttemptRecovery(assistantMessageId, throwable)) {
                     val recovered = recoverAbortedStream(
+                        conversationId = conversationId,
                         settings = settings,
                         history = history,
                         assistantMessageId = assistantMessageId,
@@ -364,10 +370,12 @@ class ChatStreamCoordinator(
         throwable: Throwable,
     ): Boolean {
         val stoppedThisMessage = stoppedAssistantMessageIds.contains(assistantMessageId)
-        val canceled = throwable is CancellationException ||
-            throwable.message?.contains("Canceled", ignoreCase = true) == true ||
-            throwable.message?.contains("Socket closed", ignoreCase = true) == true ||
-            throwable.message?.contains("Software caused connection abort", ignoreCase = true) == true
+        val canceled = throwable is CancellationException || throwable.causes().any { cause ->
+            val message = cause.message.orEmpty()
+            message.contains("Canceled", ignoreCase = true) ||
+                message.contains("Socket closed", ignoreCase = true) ||
+                message.contains("Software caused connection abort", ignoreCase = true)
+        }
         return stoppedThisMessage && canceled
     }
 
@@ -376,13 +384,25 @@ class ChatStreamCoordinator(
         throwable: Throwable,
     ): Boolean {
         if (stoppedAssistantMessageIds.contains(assistantMessageId)) return false
-        val message = throwable.message.orEmpty()
-        return message.contains("Software caused connection abort", ignoreCase = true) ||
-            message.contains("Connection reset", ignoreCase = true) ||
-            message.contains("Broken pipe", ignoreCase = true)
+        return throwable.causes().any { cause ->
+            val message = cause.message.orEmpty()
+            cause is EOFException ||
+                cause is SocketException ||
+                cause is SocketTimeoutException ||
+                cause is IOException && (
+                    message.contains("connection", ignoreCase = true) ||
+                        message.contains("socket", ignoreCase = true) ||
+                        message.contains("stream", ignoreCase = true) ||
+                        message.contains("unexpected end", ignoreCase = true)
+                    ) ||
+                message.contains("Software caused connection abort", ignoreCase = true) ||
+                message.contains("Connection reset", ignoreCase = true) ||
+                message.contains("Broken pipe", ignoreCase = true)
+        }
     }
 
     private suspend fun recoverAbortedStream(
+        conversationId: Long,
         settings: dev.codex.android.data.model.AppSettings,
         history: List<ChatMessage>,
         assistantMessageId: Long,
@@ -401,13 +421,23 @@ class ChatStreamCoordinator(
             createdAt = System.currentTimeMillis(),
         )
 
-        val recovery = openAiCompatService.createAssistantReply(
-            settings = settings,
-            history = resumeHistory,
-        )
+        repeat(ABORTED_STREAM_RECOVERY_ATTEMPTS) { attempt ->
+            if (stoppedAssistantMessageIds.contains(assistantMessageId)) return false
+            if (attempt > 0) {
+                delay(RECOVERY_RETRY_BASE_DELAY_MS * attempt)
+            }
 
-        return recovery.fold(
-            onSuccess = { reply ->
+            val recovery = openAiCompatService.createAssistantReply(
+                settings = settings,
+                history = resumeHistory,
+                onCallCreated = { call ->
+                    activeStreamCalls[conversationId] = call
+                    if (stoppedAssistantMessageIds.contains(assistantMessageId)) {
+                        call.cancel()
+                    }
+                },
+            )
+            recovery.onSuccess { reply ->
                 conversationRepository.updateStreamingMessage(
                     messageId = assistantMessageId,
                     content = mergeRecoveredText(streamedText, reply.text),
@@ -416,12 +446,12 @@ class ChatStreamCoordinator(
                     webSearchState = streamedWebSearchState,
                     isError = false,
                 )
-                true
-            },
-            onFailure = {
-                false
-            },
-        )
+                return true
+            }
+            val recoveryError = recovery.exceptionOrNull() ?: return false
+            if (!shouldAttemptRecovery(assistantMessageId, recoveryError)) return false
+        }
+        return false
     }
 
     private fun mergeRecoveredText(
@@ -448,6 +478,10 @@ class ChatStreamCoordinator(
         activeStreamJobs[conversationId]?.cancel()
     }
 }
+
+private fun Throwable.causes(): Sequence<Throwable> = generateSequence(this) { current ->
+    current.cause?.takeUnless { it === current }
+}.take(MAX_CAUSE_DEPTH)
 
 private fun markLatestStepCompleted(
     current: List<ChatActivity>,
@@ -491,6 +525,9 @@ private fun incrementActivityCount(
 }
 
 private const val STREAMING_UI_COMMIT_INTERVAL_MS = 80L
+private const val ABORTED_STREAM_RECOVERY_ATTEMPTS = 3
+private const val RECOVERY_RETRY_BASE_DELAY_MS = 750L
+private const val MAX_CAUSE_DEPTH = 8
 
 private const val ACTIVITY_RUNNING = "running"
 private const val ACTIVITY_COMPLETED = "completed"

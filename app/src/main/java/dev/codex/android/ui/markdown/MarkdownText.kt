@@ -1,10 +1,12 @@
 package dev.codex.android.ui.markdown
 
-import android.graphics.Typeface
 import android.text.Spannable
 import android.text.SpannableString
+import android.text.Spanned
 import android.text.method.LinkMovementMethod
 import android.text.style.BackgroundColorSpan
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.util.TypedValue
 import android.view.ViewGroup
 import androidx.appcompat.widget.AppCompatTextView
@@ -49,12 +51,19 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.codex.android.R
 import io.noties.markwon.Markwon
+import io.noties.markwon.core.spans.EmphasisSpan
+import io.noties.markwon.core.spans.StrongEmphasisSpan
 import io.noties.markwon.ext.latex.JLatexMathPlugin
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
@@ -78,6 +87,11 @@ private sealed interface MarkdownSegment {
     data class Text(val markdown: String) : MarkdownSegment
     data class CodeBlock(val language: String?, val code: String) : MarkdownSegment
 }
+
+internal data class MarkdownChunk(
+    val markdown: String,
+    val searchableText: String,
+)
 
 private data class FenceDefinition(
     val marker: Char,
@@ -153,17 +167,19 @@ fun MarkdownText(
                 is MarkdownSegment.Text -> {
                     if (segment.markdown.isNotBlank()) {
                         Box(
-                            modifier = Modifier.onGloballyPositioned { coordinates ->
-                                if (
-                                    highlightQuery.isNotBlank() &&
-                                    localActiveOccurrenceIndex != null &&
-                                    onActiveSearchTargetPositioned != null
-                                ) {
-                                    onActiveSearchTargetPositioned(
-                                        coordinates.positionInRoot().y + coordinates.size.height / 2f,
-                                    )
-                                }
-                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { coordinates ->
+                                    if (
+                                        highlightQuery.isNotBlank() &&
+                                        localActiveOccurrenceIndex != null &&
+                                        onActiveSearchTargetPositioned != null
+                                    ) {
+                                        onActiveSearchTargetPositioned(
+                                            coordinates.positionInRoot().y + coordinates.size.height / 2f,
+                                        )
+                                    }
+                                },
                         ) {
                             MarkdownTextView(
                                 markdown = segment.markdown,
@@ -181,17 +197,19 @@ fun MarkdownText(
 
                 is MarkdownSegment.CodeBlock -> {
                     Box(
-                        modifier = Modifier.onGloballyPositioned { coordinates ->
-                            if (
-                                highlightQuery.isNotBlank() &&
-                                localActiveOccurrenceIndex != null &&
-                                onActiveSearchTargetPositioned != null
-                            ) {
-                                onActiveSearchTargetPositioned(
-                                    coordinates.positionInRoot().y + coordinates.size.height / 2f,
-                                )
-                            }
-                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { coordinates ->
+                                if (
+                                    highlightQuery.isNotBlank() &&
+                                    localActiveOccurrenceIndex != null &&
+                                    onActiveSearchTargetPositioned != null
+                                ) {
+                                    onActiveSearchTargetPositioned(
+                                        coordinates.positionInRoot().y + coordinates.size.height / 2f,
+                                    )
+                                }
+                            },
                     ) {
                         CodeBlockCard(
                             language = segment.language,
@@ -305,12 +323,6 @@ private fun CodeBlockCard(
     }
     val horizontalScrollState = rememberScrollState()
     val verticalScrollState = rememberScrollState()
-    val copyCode = remember(clipboard, code) {
-        {
-            clipboard.setText(AnnotatedString(code))
-            copied = true
-        }
-    }
 
     LaunchedEffect(copied) {
         if (copied) {
@@ -347,7 +359,10 @@ private fun CodeBlockCard(
                     )
                 }
                 TextButton(
-                    onClick = copyCode,
+                    onClick = {
+                        clipboard.setText(AnnotatedString(code))
+                        copied = true
+                    },
                 ) {
                     Icon(
                         imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
@@ -374,9 +389,9 @@ private fun CodeBlockCard(
             ) {
                 Box(
                     modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 340.dp)
-                    .verticalScroll(verticalScrollState),
+                        .fillMaxWidth()
+                        .heightIn(max = 340.dp)
+                        .verticalScroll(verticalScrollState),
                 ) {
                     Row(modifier = Modifier.horizontalScroll(horizontalScrollState)) {
                         CodeBlockTextView(
@@ -385,7 +400,6 @@ private fun CodeBlockCard(
                             inactiveHighlightColor = inactiveHighlightColor,
                             activeHighlightColor = activeHighlightColor,
                             activeOccurrenceIndex = activeOccurrenceIndex,
-                            onLongPress = onLongPress,
                         )
                     }
                 }
@@ -394,7 +408,6 @@ private fun CodeBlockCard(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CodeBlockTextView(
     highlightedCode: CharSequence,
@@ -403,54 +416,81 @@ private fun CodeBlockTextView(
     inactiveHighlightColor: Int,
     activeHighlightColor: Int,
     activeOccurrenceIndex: Int? = null,
-    onLongPress: (() -> Unit)? = null,
 ) {
-    val context = LocalContext.current
-    val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val displayCode = remember(
+        highlightedCode,
+        highlightQuery,
+        inactiveHighlightColor,
+        activeHighlightColor,
+        activeOccurrenceIndex,
+    ) {
+        buildCodeAnnotatedString(
+            highlightedCode = highlightedCode,
+            query = highlightQuery,
+            inactiveHighlightColor = inactiveHighlightColor,
+            activeHighlightColor = activeHighlightColor,
+            activeOccurrenceIndex = activeOccurrenceIndex,
+        )
+    }
 
-    AndroidView(
+    Text(
+        text = displayCode,
         modifier = modifier,
-        factory = {
-            AppCompatTextView(context).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                )
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setLineSpacing(0f, 1.25f)
-                typeface = Typeface.MONOSPACE
-                includeFontPadding = false
-                setTextColor(textColor)
-                setTextIsSelectable(false)
-                setHorizontallyScrolling(true)
-                isHapticFeedbackEnabled = false
-                isLongClickable = onLongPress != null
-                setOnLongClickListener {
-                    onLongPress?.invoke()
-                    onLongPress != null
-                }
-            }
-        },
-        update = { textView ->
-            textView.setTextColor(textColor)
-            textView.isHapticFeedbackEnabled = false
-            textView.isLongClickable = onLongPress != null
-            textView.setOnLongClickListener {
-                onLongPress?.invoke()
-                onLongPress != null
-            }
-            if (textView.text != highlightedCode) {
-                textView.text = highlightedCode
-            }
-            applyHighlightSpans(
-                textView = textView,
-                query = highlightQuery,
-                inactiveHighlightColor = inactiveHighlightColor,
-                activeHighlightColor = activeHighlightColor,
-                activeOccurrenceIndex = activeOccurrenceIndex,
-            )
-        },
+        color = MaterialTheme.colorScheme.onSurface,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 14.sp,
+        lineHeight = 17.5.sp,
     )
+}
+
+private fun buildCodeAnnotatedString(
+    highlightedCode: CharSequence,
+    query: String,
+    inactiveHighlightColor: Int,
+    activeHighlightColor: Int,
+    activeOccurrenceIndex: Int?,
+): AnnotatedString = buildAnnotatedString {
+    append(highlightedCode.toString())
+
+    if (highlightedCode is Spanned) {
+        highlightedCode.getSpans(0, highlightedCode.length, Any::class.java).forEach { span ->
+            val start = highlightedCode.getSpanStart(span).coerceIn(0, length)
+            val end = highlightedCode.getSpanEnd(span).coerceIn(start, length)
+            if (start == end) return@forEach
+
+            val style = when (span) {
+                is ForegroundColorSpan -> SpanStyle(color = Color(span.foregroundColor))
+                is BackgroundColorSpan -> SpanStyle(background = Color(span.backgroundColor))
+                is StrongEmphasisSpan -> SpanStyle(fontWeight = FontWeight.Bold)
+                is EmphasisSpan -> SpanStyle(fontStyle = FontStyle.Italic)
+                is StyleSpan -> when (span.style) {
+                    android.graphics.Typeface.BOLD -> SpanStyle(fontWeight = FontWeight.Bold)
+                    android.graphics.Typeface.ITALIC -> SpanStyle(fontStyle = FontStyle.Italic)
+                    android.graphics.Typeface.BOLD_ITALIC -> SpanStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontStyle = FontStyle.Italic,
+                    )
+                    else -> null
+                }
+                else -> null
+            }
+            if (style != null) {
+                addStyle(style, start, end)
+            }
+        }
+    }
+
+    findHighlightMatches(highlightedCode.toString(), query).forEachIndexed { index, match ->
+        addStyle(
+            style = SpanStyle(
+                background = Color(
+                    if (index == activeOccurrenceIndex) activeHighlightColor else inactiveHighlightColor,
+                ),
+            ),
+            start = match.start,
+            end = match.endExclusive,
+        )
+    }
 }
 
 private fun applyHighlightSpans(
@@ -578,6 +618,50 @@ private fun splitMarkdownSegments(markdown: String): List<MarkdownSegment> {
     }
 
     return segments
+}
+
+internal fun splitMarkdownChunks(markdown: String): List<MarkdownChunk> =
+    splitMarkdownSegments(markdown).map { segment ->
+        when (segment) {
+            is MarkdownSegment.Text -> MarkdownChunk(
+                markdown = segment.markdown,
+                searchableText = segment.markdown,
+            )
+            is MarkdownSegment.CodeBlock -> MarkdownChunk(
+                markdown = segment.asFencedMarkdown(),
+                searchableText = segment.code,
+            )
+        }
+    }
+
+private fun MarkdownSegment.CodeBlock.asFencedMarkdown(): String {
+    val backtickRun = code.longestMarkerRun('`')
+    val tildeRun = code.longestMarkerRun('~')
+    val marker = if (backtickRun <= tildeRun) '`' else '~'
+    val fence = marker.toString().repeat(maxOf(3, minOf(backtickRun, tildeRun) + 1))
+
+    return buildString {
+        append(fence)
+        language?.let(::append)
+        append('\n')
+        append(code)
+        if (!code.endsWith('\n')) append('\n')
+        append(fence)
+    }
+}
+
+private fun String.longestMarkerRun(marker: Char): Int {
+    var longest = 0
+    var current = 0
+    for (character in this) {
+        if (character == marker) {
+            current += 1
+            longest = maxOf(longest, current)
+        } else {
+            current = 0
+        }
+    }
+    return longest
 }
 
 private fun Modifier.noHapticPressGesture(

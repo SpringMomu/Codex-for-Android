@@ -973,15 +973,15 @@ private fun ReasoningEffortField(
             Slider(
                 value = selectedIndex.toFloat(),
                 onValueChange = { onSelectedIndexChange(it.roundToInt()) },
-                valueRange = 0f..3f,
-                steps = 2,
+                valueRange = 0f..4f,
+                steps = 3,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                listOf("low", "medium", "high", "xhigh").forEach { value ->
+                listOf("low", "medium", "high", "xhigh", "max").forEach { value ->
                     Text(
                         text = reasoningEffortLabel(value),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -998,14 +998,16 @@ private fun reasoningEffortIndex(value: String): Int = when (value.lowercase()) 
     "medium" -> 1
     "high" -> 2
     "xhigh" -> 3
+    "max" -> 4
     else -> 2
 }
 
-private fun reasoningEffortValue(index: Int): String = when (index.coerceIn(0, 3)) {
+private fun reasoningEffortValue(index: Int): String = when (index.coerceIn(0, 4)) {
     0 -> "low"
     1 -> "medium"
     2 -> "high"
-    else -> "xhigh"
+    3 -> "xhigh"
+    else -> "max"
 }
 
 private fun parseMaxContextTokens(value: String): Int =
@@ -1083,7 +1085,8 @@ private fun reasoningEffortLabel(value: String): String = stringResource(
         "low" -> R.string.reasoning_low
         "medium" -> R.string.reasoning_medium
         "high" -> R.string.reasoning_high
-        else -> R.string.reasoning_xhigh
+        "xhigh" -> R.string.reasoning_xhigh
+        else -> R.string.reasoning_max
     },
 )
 

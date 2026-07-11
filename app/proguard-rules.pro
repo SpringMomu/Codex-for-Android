@@ -14,6 +14,5 @@
     *** write$Self(...);
 }
 
-# Prism4j grammar locator is annotation-generated and discovered by Markwon syntax highlighting.
+# Keep the generated locator entry point; R8 can still inline and shrink the grammar implementations it references.
 -keep class dev.codex.android.ui.markdown.CodexGrammarLocator { *; }
--keep class io.noties.prism4j.** { *; }

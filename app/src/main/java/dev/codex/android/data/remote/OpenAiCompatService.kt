@@ -22,6 +22,7 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.EOFException
 import java.io.File
 import java.util.Base64
 
@@ -55,6 +56,7 @@ class OpenAiCompatService(
     suspend fun createAssistantReply(
         settings: AppSettings,
         history: List<ChatMessage>,
+        onCallCreated: ((Call) -> Unit)? = null,
     ): Result<AssistantReply> = withContext(Dispatchers.IO) {
         runCatching {
             var finalReply: AssistantReply? = null
@@ -66,6 +68,7 @@ class OpenAiCompatService(
                         finalReply = event.reply
                     }
                 },
+                onCallCreated = onCallCreated,
             ).getOrThrow()
             finalReply ?: error(appStrings.errorNoVisibleReply(settings.languageTag))
         }
@@ -515,12 +518,17 @@ class OpenAiCompatService(
         val content = StringBuilder()
         val reasoningSummary = StringBuilder()
         var pendingError: String? = null
+        var streamCompleted = false
 
         reader.useLines { lines ->
             lines.forEach { line ->
-                if (!line.startsWith("data: ")) return@forEach
-                val rawPayload = line.removePrefix("data: ").trim()
-                if (rawPayload == "[DONE]" || rawPayload.isBlank()) return@forEach
+                if (!line.startsWith("data:")) return@forEach
+                val rawPayload = line.removePrefix("data:").trim()
+                if (rawPayload == "[DONE]") {
+                    streamCompleted = true
+                    return@forEach
+                }
+                if (rawPayload.isBlank()) return@forEach
 
                 val payload = json.parseToJsonElement(rawPayload).jsonObject
                 when (payload["type"]?.jsonPrimitive?.contentOrNull) {
@@ -569,6 +577,7 @@ class OpenAiCompatService(
                     }
 
                     "response.completed" -> {
+                        streamCompleted = true
                         if (content.isEmpty()) {
                             val text = extractCompletedText(payload)
                             if (text.isNotEmpty()) {
@@ -597,6 +606,9 @@ class OpenAiCompatService(
         }
 
         pendingError?.let { error(it) }
+        if (!streamCompleted) {
+            throw EOFException("Response stream ended before response.completed")
+        }
         val reply = AssistantReply(
             text = content.toString().trim().ifBlank { error(appStrings.errorNoVisibleReply(languageTag)) },
             reasoningSummary = reasoningSummary.toString().trim(),
@@ -612,15 +624,24 @@ class OpenAiCompatService(
     ): AssistantReply {
         val content = StringBuilder()
         var pendingError: String? = null
+        var streamCompleted = false
 
         reader.useLines { lines ->
             lines.forEach { line ->
-                if (!line.startsWith("data: ")) return@forEach
-                val rawPayload = line.removePrefix("data: ").trim()
-                if (rawPayload == "[DONE]" || rawPayload.isBlank()) return@forEach
+                if (!line.startsWith("data:")) return@forEach
+                val rawPayload = line.removePrefix("data:").trim()
+                if (rawPayload == "[DONE]") {
+                    streamCompleted = true
+                    return@forEach
+                }
+                if (rawPayload.isBlank()) return@forEach
 
                 val payload = json.parseToJsonElement(rawPayload).jsonObject
                 when (payload["type"]?.jsonPrimitive?.contentOrNull) {
+                    "message_stop" -> {
+                        streamCompleted = true
+                    }
+
                     "content_block_start" -> {
                         val text = payload["content_block"]
                             ?.jsonObject
@@ -660,6 +681,9 @@ class OpenAiCompatService(
         }
 
         pendingError?.let { error(it) }
+        if (!streamCompleted) {
+            throw EOFException("Message stream ended before message_stop")
+        }
         val reply = AssistantReply(
             text = content.toString().trim().ifBlank { error(appStrings.errorNoVisibleReply(languageTag)) },
         )

@@ -42,6 +42,7 @@
     <string name="reasoning_medium">中</string>
     <string name="reasoning_high">高</string>
     <string name="reasoning_xhigh">极高</string>
+    <string name="reasoning_max">MAX</string>
 
     <string name="history_title">历史记录</string>
     <string name="history_empty_title">还没有历史会话</string>

@@ -8,11 +8,14 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import dev.codex.android.R
 
 class StreamingForegroundService : Service() {
+    private var wakeLock: PowerManager.WakeLock? = null
+
     override fun onCreate() {
         super.onCreate()
         ensureNotificationChannel()
@@ -24,10 +27,32 @@ class StreamingForegroundService : Service() {
         startId: Int,
     ): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
+        acquireWakeLock()
         return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        releaseWakeLock()
+        super.onDestroy()
+    }
+
+    private fun acquireWakeLock() {
+        val lock = wakeLock ?: getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:streaming")
+            .apply { setReferenceCounted(false) }
+            .also { wakeLock = it }
+        if (lock.isHeld) {
+            lock.release()
+        }
+        lock.acquire(WAKE_LOCK_TIMEOUT_MS)
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.takeIf { it.isHeld }?.release()
+        wakeLock = null
+    }
 
     private fun buildNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(R.mipmap.ic_launcher)
@@ -57,6 +82,7 @@ class StreamingForegroundService : Service() {
     companion object {
         private const val CHANNEL_ID = "chat_streaming"
         private const val NOTIFICATION_ID = 1001
+        private const val WAKE_LOCK_TIMEOUT_MS = 2 * 60 * 60 * 1_000L
 
         fun start(context: Context) {
             val intent = Intent(context, StreamingForegroundService::class.java)

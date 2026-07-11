@@ -41,6 +41,7 @@
     <string name="reasoning_medium">Medium</string>
     <string name="reasoning_high">High</string>
     <string name="reasoning_xhigh">Very high</string>
+    <string name="reasoning_max">Max</string>
 
     <string name="history_title">History</string>
     <string name="history_empty_title">No history yet</string>
